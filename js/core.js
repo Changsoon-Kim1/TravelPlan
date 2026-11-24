@@ -116,15 +116,26 @@
   }
   function parseGpx(text) {
     const pts = [];
-    const re = /<(trkpt|rtept)\b([^>]*)>/gi;
-    let m;
-    while ((m = re.exec(text))) {
-      const lat = /\blat\s*=\s*["']([-\d.eE+]+)["']/.exec(m[2]);
-      const lon = /\blon\s*=\s*["']([-\d.eE+]+)["']/.exec(m[2]);
-      if (lat && lon) {
-        const la = parseFloat(lat[1]), lo = parseFloat(lon[1]);
-        if (isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180) pts.push([la, lo]);
+    // 점 하나씩 잘라서 읽는다. 고도(<ele>)가 있으면 [위도, 경도, 고도m]로 함께 담는다.
+    const chunks = String(text).split(/<(?:trkpt|rtept)\b/i);
+    for (let i = 1; i < chunks.length; i++) {
+      const ch = chunks[i];
+      const gt = ch.indexOf('>');
+      if (gt < 0) continue;
+      const attrs = ch.slice(0, gt);
+      const lat = /\blat\s*=\s*["']([-\d.eE+]+)["']/.exec(attrs);
+      const lon = /\blon\s*=\s*["']([-\d.eE+]+)["']/.exec(attrs);
+      if (!lat || !lon) continue;
+      const la = parseFloat(lat[1]), lo = parseFloat(lon[1]);
+      if (!(isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180)) continue;
+      let ele = NaN;
+      if (attrs.slice(-1) !== '/') {
+        const body = ch.slice(gt + 1);
+        const end = body.search(/<\/(?:trkpt|rtept)>/i);
+        const em = /<ele>\s*([-\d.eE+]+)\s*<\/ele>/i.exec(end >= 0 ? body.slice(0, end) : body.slice(0, 400));
+        if (em) ele = parseFloat(em[1]);
       }
+      pts.push(isFinite(ele) ? [la, lo, ele] : [la, lo]);
     }
     return pts;
   }
@@ -162,7 +173,34 @@
   function compactPath(points, maxPoints) {
     let tol = 5, out = simplifyPath(points, tol);
     while (out.length > (maxPoints || 1500) && tol < 200) { tol *= 1.6; out = simplifyPath(points, tol); }
-    return out.map((p) => [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5]);
+    return out.map((p) => {
+      const q = [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5];
+      if (p.length > 2 && isFinite(p[2])) q.push(Math.round(p[2]));
+      return q;
+    });
+  }
+  // 고도 프로필: 점의 80% 이상에 고도가 있어야 만든다. 누적 오르막/내리막은 3m 미만 흔들림을 무시.
+  function elevationProfile(path) {
+    if (!path || path.length < 5) return null;
+    if (path.filter((p) => p.length > 2 && isFinite(p[2])).length < path.length * 0.8) return null;
+    const d = [0], raw = [];
+    let last = path.find((p) => p.length > 2 && isFinite(p[2]))[2];
+    for (let i = 0; i < path.length; i++) {
+      if (i > 0) d.push(d[i - 1] + haversineKm(path[i - 1], path[i]));
+      if (path[i].length > 2 && isFinite(path[i][2])) last = path[i][2];
+      raw.push(last);
+    }
+    const e = raw.map((_, i) => {
+      let sum = 0, n = 0;
+      for (let k = Math.max(0, i - 2); k <= Math.min(raw.length - 1, i + 2); k++) { sum += raw[k]; n++; }
+      return sum / n;
+    });
+    let up = 0, down = 0, ref = e[0];
+    for (let i = 1; i < e.length; i++) {
+      const diff = e[i] - ref;
+      if (Math.abs(diff) >= 3) { if (diff > 0) up += diff; else down -= diff; ref = e[i]; }
+    }
+    return { d, e, min: Math.min(...e), max: Math.max(...e), up, down, total: d[d.length - 1] };
   }
   // 파일 이름에서 코스 번호 추측: "올레 10코스.gpx", "olle_03-A", "7-1코스" ...
   function guessCourseId(filename, validIds) {
@@ -231,7 +269,7 @@
   }
 
   const api = {
-    searchTerms,
+    searchTerms, elevationProfile,
     PALETTE, mainNum, areAdjacent, assignColors,
     pad2, toMin, fromMin, normTime, parseISO, toISO, addDays, weekday, dateRange, daysInMonth, defaultEnd,
     eventCoversDay, compareEvents, findOverlaps,

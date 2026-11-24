@@ -253,3 +253,18 @@ button.wp.find { border: 0; background: none; padding: 0; color: var(--brand); t
 button.find-main { border: 1px solid var(--brand); background: #fff; color: var(--brand); border-radius: 8px; padding: 3px 8px; font-size: 12px; font-weight: 700; }
 
 .place-results li.note { padding: 6px 10px; font-size: 12px; color: #0f766e; background: #f0fdfa; border-radius: 8px; margin-bottom: 2px; }
+
+/* ---------- 코스 소개/시각 자료 ---------- */
+.overview .story { font-size: 14.5px; line-height: 1.6; margin: 6px 0; }
+.overview .road, .overview .official-tip { font-size: 13.5px; line-height: 1.5; margin: 6px 0; padding: 8px 10px; background: #f0fdfa; border-radius: 10px; }
+.overview .official-tip { background: #fff7ed; }
+.overview .vis { margin: 10px 0; }
+.vis-t { font-weight: 700; font-size: 13px; margin: 8px 0 4px; }
+.vis-t small { font-weight: 500; color: var(--muted); }
+.shape-svg, .elev-svg { width: 100%; height: auto; display: block; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; }
+.elev-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: #475569; margin-top: 4px; }
+.sights { list-style: none; margin: 0; padding: 0; }
+.sights li { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+.sights li:last-child { border-bottom: 0; }
+button.find-icon { flex: none; align-self: flex-start; border: 1px solid var(--brand); background: #fff; color: var(--brand); border-radius: 8px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.overview .src { margin-top: 8px; }

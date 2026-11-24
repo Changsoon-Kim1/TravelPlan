@@ -72,7 +72,7 @@ test('GPX 파싱: 속성 순서·rtept·따옴표 모두 처리', () => {
     <trkpt lon='126.94' lat='33.46'/>
     </trkseg></trk><rte><rtept lat="33.5" lon="126.9"></rtept></rte><wpt lat="1" lon="1"/></gpx>`;
   const pts = C.parseGpx(gpx);
-  assert.deepEqual(pts, [[33.45, 126.93], [33.46, 126.94], [33.5, 126.9]]);
+  assert.deepEqual(pts, [[33.45, 126.93, 3], [33.46, 126.94], [33.5, 126.9]]); // 고도가 있으면 3번째 값으로 보존
   assert.deepEqual(C.parseGpx('<gpx></gpx>'), []);
   assert.deepEqual(C.parseGpx('<trkpt lat="999" lon="1"/>'), []);
 });
@@ -128,4 +128,21 @@ test('장소 검색어: 설명형 이름에서 장소만 뽑고 단계별 후보
     c.restaurants.forEach((r) => assert.ok(C.searchTerms(r.name, r.spot).length >= 1, c.id + ' ' + r.name));
     c.highlights.forEach((h) => assert.ok(C.searchTerms(h, '').length >= 1, c.id + ' ' + h));
   });
+});
+
+test('GPX 고도(ele) 읽기·보존과 고도 프로필', () => {
+  let pts = '';
+  for (let i = 0; i < 60; i++) pts += '<trkpt lat="33.2' + (100 + i) + '" lon="126.3"><ele>' + (10 + i * 2) + '</ele></trkpt>';
+  const p = C.parseGpx('<gpx><trk><trkseg>' + pts + '</trkseg></trk></gpx>');
+  assert.equal(p.length, 60);
+  assert.deepEqual(p[3].length, 3);
+  assert.equal(p[3][2], 16);
+  const c = C.compactPath(p, 1500);
+  assert.equal(c[0].length, 3);
+  const prof = C.elevationProfile(p);
+  assert.ok(prof && prof.max > prof.min && prof.up > 100 && prof.down < 1);
+  // 고도 없는 파일은 예전과 같은 2칸 형식, 프로필 없음
+  const q = C.parseGpx('<trkpt lat="33.1" lon="126.1"></trkpt><trkpt lat="33.2" lon="126.2"/>');
+  assert.deepEqual(q, [[33.1, 126.1], [33.2, 126.2]]);
+  assert.equal(C.elevationProfile(q), null);
 });

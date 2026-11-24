@@ -33,6 +33,76 @@
     return h + '</section>';
   }
 
+  // ---- 시각 자료: 경로 모양 / 고도 프로필 (올린 GPX로 만든다) ----
+  function shapeSVG(path, color) {
+    const W = 320, H = 130, pad = 10;
+    const lat0 = path.reduce((a, p) => a + p[0], 0) / path.length;
+    const kx = Math.cos(lat0 * Math.PI / 180);
+    const xs = path.map((p) => p[1] * kx), ys = path.map((p) => p[0]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const sc = Math.min((W - 2 * pad) / ((maxX - minX) || 1e-6), (H - 2 * pad) / ((maxY - minY) || 1e-6));
+    const ox = (W - (maxX - minX) * sc) / 2, oy = (H - (maxY - minY) * sc) / 2;
+    const P = path.map((p, i) => [ox + (xs[i] - minX) * sc, H - (oy + (ys[i] - minY) * sc)]);
+    const pts = P.map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ');
+    const a = P[0], b = P[P.length - 1];
+    return '<svg class="shape-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="코스 경로 모양(북쪽이 위)">' +
+      '<polyline points="' + pts + '" fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<circle cx="' + a[0].toFixed(1) + '" cy="' + a[1].toFixed(1) + '" r="5" fill="#16a34a" stroke="#fff" stroke-width="2"/>' +
+      '<circle cx="' + b[0].toFixed(1) + '" cy="' + b[1].toFixed(1) + '" r="5" fill="#dc2626" stroke="#fff" stroke-width="2"/>' +
+      '<text x="' + (a[0] + 8).toFixed(1) + '" y="' + (a[1] - 6).toFixed(1) + '" font-size="10" font-weight="700" fill="#166534">시점</text>' +
+      '<text x="' + (b[0] + 8).toFixed(1) + '" y="' + (b[1] - 6).toFixed(1) + '" font-size="10" font-weight="700" fill="#991b1b">종점</text></svg>';
+  }
+  function elevSVG(pr, color) {
+    const W = 320, H = 120, L = 30, R = 8, T = 8, B = 18;
+    const span = Math.max(pr.max - pr.min, 10), lo = pr.min - span * 0.05, hi = pr.max + span * 0.05;
+    const X = (d) => L + (d / pr.total) * (W - L - R), Y = (e) => T + (1 - (e - lo) / (hi - lo)) * (H - T - B);
+    const step = Math.max(1, Math.floor(pr.d.length / 120));
+    let line = '';
+    for (let i = 0; i < pr.d.length; i += step) line += (line ? ' ' : '') + X(pr.d[i]).toFixed(1) + ',' + Y(pr.e[i]).toFixed(1);
+    const last = pr.d.length - 1;
+    if ((last % step) !== 0) line += ' ' + X(pr.d[last]).toFixed(1) + ',' + Y(pr.e[last]).toFixed(1);
+    const area = line + ' ' + X(pr.total).toFixed(1) + ',' + (H - B) + ' ' + L + ',' + (H - B);
+    const km = Math.max(1, Math.round(pr.total / 5));
+    let ticks = '';
+    for (let k = 0; k <= pr.total + 0.01; k += km) ticks += '<text x="' + X(k).toFixed(1) + '" y="' + (H - 4) + '" font-size="9" text-anchor="middle" fill="#64748b">' + k + 'km</text>';
+    return '<svg class="elev-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="고도 프로필">' +
+      '<polygon points="' + area + '" fill="' + color + '" fill-opacity=".18"/>' +
+      '<polyline points="' + line + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>' +
+      '<line x1="' + L + '" y1="' + Y(pr.max).toFixed(1) + '" x2="' + (W - R) + '" y2="' + Y(pr.max).toFixed(1) + '" stroke="#e2e8f0" stroke-dasharray="3 3"/>' +
+      '<line x1="' + L + '" y1="' + Y(pr.min).toFixed(1) + '" x2="' + (W - R) + '" y2="' + Y(pr.min).toFixed(1) + '" stroke="#e2e8f0" stroke-dasharray="3 3"/>' +
+      '<text x="' + (L - 3) + '" y="' + (Y(pr.max) + 3).toFixed(1) + '" font-size="9" text-anchor="end" fill="#64748b">' + Math.round(pr.max) + 'm</text>' +
+      '<text x="' + (L - 3) + '" y="' + (Y(pr.min) + 3).toFixed(1) + '" font-size="9" text-anchor="end" fill="#64748b">' + Math.round(pr.min) + 'm</text>' + ticks + '</svg>';
+  }
+
+  // 이 길은 어떤 길? — 공식 안내를 줄여 쓴 소개 + 경로 모양 + 고도
+  function overviewHTML(c, color) {
+    const x = (window.OLLE_EXTRA || {})[c.id];
+    const path = S.routes && S.routes[c.id];
+    const prof = path ? TPCore.elevationProfile(path) : null;
+    let h = '<section class="overview"><h3>📖 이 길은 어떤 길?</h3>';
+    if (x && x.notice) h += '<div class="warn-box">⚠ ' + esc(x.notice) + '</div>';
+    if (x && x.story) h += '<p class="story">' + esc(x.story) + '</p>';
+    else h += '<p class="muted">이 코스는 공식 상세 설명을 아직 정리하지 못했어요(보강 예정). 아래 구경거리와 공식 홈페이지 링크를 참고하세요.</p>';
+    if (x && x.road) h += '<div class="road"><b>걷는 느낌</b> ' + esc(x.road) + '</div>';
+    if (path && path.length > 1) h += '<div class="vis"><div class="vis-t">경로 모양 <small>(북쪽이 위 · 초록 시점 → 빨강 종점)</small></div>' + shapeSVG(path, color) + '</div>';
+    if (prof) {
+      h += '<div class="vis"><div class="vis-t">고도 프로필</div>' + elevSVG(prof, color) +
+        '<div class="elev-stats"><span>↑ 누적 오르막 <b>' + Math.round(prof.up) + 'm</b></span><span>↓ 내리막 <b>' + Math.round(prof.down) + 'm</b></span>' +
+        '<span>최고 <b>' + Math.round(prof.max) + 'm</b></span><span>최저 <b>' + Math.round(prof.min) + 'm</b></span></div></div>';
+    } else if (path && TPData.isOwner()) {
+      h += '<p class="muted sm">⛰ 고도 그래프는 고도(ele)가 들어 있는 GPX를 다시 올리면 나타나요.</p>';
+    }
+    if (x && x.sights && x.sights.length) {
+      h += '<div class="vis-t">길에서 만나는 곳</div><ul class="sights">' + x.sights.map((s) =>
+        '<li><div><b>' + esc(s.n) + '</b><div class="muted sm">' + esc(s.d) + '</div></div>' + findBtn(s.n, '🔍', 'find-icon', '') + '</li>').join('') + '</ul>';
+    }
+    if (x && x.tip) h += '<div class="official-tip"><b>공식 팁</b> ' + esc(x.tip) + '</div>';
+    if (x && x.center) h += '<div class="muted sm">📍 안내: ' + esc(x.center) + '</div>';
+    h += '<div class="muted sm src">출처: ' + ext(window.OLLE_OFFICIAL_URL || 'https://www.jejuolle.org/trail', '제주올레 공식 홈페이지') + ' 코스 안내를 요약한 내용이에요.</div>';
+    return h + '</section>';
+  }
+
   function render(c) {
     const color = S.colors[c.id] || '#0f766e';
     const exact = TPMap.isExact(c.id);
@@ -56,6 +126,7 @@
       h += '<div class="warn-box">⚠ 지도의 점선은 <b>임시 대략 경로</b>(시점·종점 직선)예요. 공식 GPX를 올리면 실제 경로로 바뀝니다.</div>';
     }
 
+    h += overviewHTML(c, color);
     h += scheduleHTML(c);
 
     h += '<section><h3>👀 구경거리 <small class="muted">(누르면 앱 지도에서 검색)</small></h3><div class="chips">' +
