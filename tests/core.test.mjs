@@ -1,0 +1,113 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
+globalThis.window = {};
+require('../data/courses.js');
+require('../data/anchors.js');
+const C = require('../js/core.js');
+const courses = window.OLLE_COURSES;
+
+test('코스 29개, 봄꽃 추천 6개', () => {
+  assert.equal(courses.length, 29);
+  assert.deepEqual(window.OLLE_SPRING_IDS, ['01', '02', '10', '10-1', '16', '19']);
+});
+
+test('인접한 코스는 서로 다른 색 (21↔1 고리 포함)', () => {
+  const colors = C.assignColors(courses);
+  for (const a of courses) {
+    assert.ok(colors[a.id], a.id + ' 색 없음');
+    for (const b of courses) {
+      if (C.areAdjacent(a, b)) assert.notEqual(colors[a.id], colors[b.id], `${a.id} / ${b.id}`);
+    }
+  }
+  assert.notEqual(colors['21'], colors['01']);
+  assert.ok(new Set(Object.values(colors)).size <= C.PALETTE.length);
+});
+
+test('날짜 계산: 2027-04-11 은 일요일, 04-19 는 월요일', () => {
+  assert.equal(C.weekday('2027-04-11'), 0);
+  assert.equal(C.weekday('2027-04-19'), 1);
+  assert.equal(C.addDays('2027-04-30', 1), '2027-05-01');
+  assert.equal(C.dateRange('2027-04-11', '2027-04-19').length, 9);
+  assert.equal(C.daysInMonth(2027, 2), 28);
+});
+
+test('기본 종료 시각: 10:00 + 5시간 = 15:00', () => {
+  assert.equal(C.defaultEnd('10:00', 5), '15:00');
+  assert.equal(C.defaultEnd('10:00', 7), '17:00');
+  assert.equal(C.defaultEnd('20:00', 7), '23:59');
+});
+
+test('겹치는 일정 찾기', () => {
+  const flight = { id: 'f', day: '2027-04-11', start_time: '11:20', end_time: null };
+  const olle = { id: 'o', day: '2027-04-11', start_time: '10:00', end_time: '15:00' };
+  assert.equal(C.findOverlaps(olle, [flight]).length, 1);
+  assert.equal(C.findOverlaps({ day: '2027-04-11', start_time: '13:00', end_time: '15:00' }, [flight]).length, 0);
+  assert.equal(C.findOverlaps({ day: '2027-04-12', start_time: '10:00', end_time: '15:00' }, [flight]).length, 0);
+  assert.equal(C.findOverlaps(olle, [olle], 'o').length, 0, '자기 자신은 제외');
+  const stay = { id: 's', day: '2027-04-14', end_day: '2027-04-15', start_time: null };
+  assert.equal(C.findOverlaps({ day: '2027-04-14', start_time: '10:00', end_time: '15:00' }, [stay]).length, 0);
+});
+
+test('여러 날 일정은 사이 날짜에도 표시', () => {
+  const stay = { day: '2027-04-14', end_day: '2027-04-15' };
+  assert.ok(C.eventCoversDay(stay, '2027-04-15'));
+  assert.ok(!C.eventCoversDay(stay, '2027-04-16'));
+});
+
+test('일정 정렬: 종일 → 시간순', () => {
+  const list = [
+    { day: '2027-04-11', start_time: '11:20', title: 'b' },
+    { day: '2027-04-11', start_time: null, title: 'a' },
+    { day: '2027-04-10', start_time: '23:00', title: 'c' }
+  ].sort(C.compareEvents);
+  assert.deepEqual(list.map((e) => e.title), ['c', 'a', 'b']);
+});
+
+test('GPX 파싱: 속성 순서·rtept·따옴표 모두 처리', () => {
+  const gpx = `<gpx><trk><trkseg>
+    <trkpt lat="33.45" lon="126.93"><ele>3</ele></trkpt>
+    <trkpt lon='126.94' lat='33.46'/>
+    </trkseg></trk><rte><rtept lat="33.5" lon="126.9"></rtept></rte><wpt lat="1" lon="1"/></gpx>`;
+  const pts = C.parseGpx(gpx);
+  assert.deepEqual(pts, [[33.45, 126.93], [33.46, 126.94], [33.5, 126.9]]);
+  assert.deepEqual(C.parseGpx('<gpx></gpx>'), []);
+  assert.deepEqual(C.parseGpx('<trkpt lat="999" lon="1"/>'), []);
+});
+
+test('경로 단순화: 끝점 유지, 점 수 감소, 거리 보존', () => {
+  const pts = [];
+  for (let i = 0; i <= 5000; i++) pts.push([33.4 + i * 0.00002, 126.9 + Math.sin(i / 300) * 0.002]);
+  const out = C.compactPath(pts, 1500);
+  assert.ok(out.length < pts.length && out.length <= 1500);
+  assert.deepEqual(out[0], [Math.round(pts[0][0] * 1e5) / 1e5, Math.round(pts[0][1] * 1e5) / 1e5]);
+  const a = C.pathLengthKm(pts), b = C.pathLengthKm(out);
+  assert.ok(Math.abs(a - b) / a < 0.02, `거리 차이 ${a} vs ${b}`);
+  assert.equal(C.simplifyPath([[1, 1], [2, 2]], 5).length, 2);
+});
+
+test('파일 이름으로 코스 번호 추측', () => {
+  const ids = courses.map((c) => c.id);
+  assert.equal(C.guessCourseId('올레 10코스.gpx', ids), '10');
+  assert.equal(C.guessCourseId('제주올레_7-1코스.gpx', ids), '07-1');
+  assert.equal(C.guessCourseId('olle_03-A.gpx', ids), '03-A');
+  assert.equal(C.guessCourseId('1코스.gpx', ids), '01');
+  assert.equal(C.guessCourseId('15-B.gpx', ids), '15-B');
+  assert.equal(C.guessCourseId('내파일.gpx', ids), null);
+});
+
+test('임시 근사 경로: 모든 코스에 정의, 앵커 존재, 제주 범위 안', () => {
+  for (const c of courses) {
+    const spec = window.APPROX_COURSES[c.id];
+    assert.ok(spec, c.id + ' 근사 데이터 없음');
+    if (spec.pts) for (const n of spec.pts) assert.ok(window.APPROX_ANCHORS[n], n + ' 앵커 없음');
+    const p = C.approxPath(spec, window.APPROX_ANCHORS);
+    assert.ok(p.length >= 2);
+    for (const [la, lo] of p) assert.ok(la > 33.0 && la < 34.1 && lo > 126.0 && lo < 127.1, `${c.id} 범위 밖`);
+  }
+  const bowed = C.approxPath(window.APPROX_COURSES['03-A'], window.APPROX_ANCHORS);
+  assert.deepEqual(bowed[0], window.APPROX_ANCHORS['온평포구']);
+  assert.deepEqual(bowed[bowed.length - 1], window.APPROX_ANCHORS['표선해수욕장']);
+});
