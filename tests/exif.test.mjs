@@ -39,3 +39,19 @@ test('파일 이름 시각·기록 위치 맞춤', () => {
   const gpx = '<trkpt lat="36.1" lon="127.1"><ele>5</ele><time>2026-11-22T00:00:00Z</time></trkpt><trkpt lat="36.2" lon="127.2"><time>bad</time></trkpt><trkpt lat="36.3" lon="127.3"><time>2026-11-22T00:01:00Z</time></trkpt>';
   assert.equal(C.parseGpxTrack(gpx).length, 2);
 });
+
+test('머문 곳 찾기(findStays)와 웹 메르카토르', () => {
+  const t0 = 1e12, pts = [];
+  for (let i = 0; i < 10; i++) pts.push({ lat: 36 + i * 0.0005, lon: 127, ele: 0, t: t0 + i * 30000 });      // 걷기(약 55m/30초)
+  for (let i = 0; i < 20; i++) pts.push({ lat: 36.005 + (i % 2) * 0.00005, lon: 127.0001, ele: 0, t: t0 + 300000 + i * 30000 }); // 식당: 10분 머묾
+  for (let i = 0; i < 10; i++) pts.push({ lat: 36.005 + (i + 1) * 0.0005, lon: 127, ele: 0, t: t0 + 900000 + i * 30000 });
+  const st = C.findStays(pts, 60, 300);
+  assert.equal(st.length, 1);
+  assert.ok(st[0].sec >= 540 && st[0].sec <= 660 && Math.abs(st[0].lat - 36.005) < 0.0005);
+  assert.equal(C.findStays(pts.slice(0, 10), 60, 300).length, 0);
+  assert.ok(Math.abs(C.mercX(127.0) - (127 + 180) / 360) < 1e-12);
+  assert.ok(C.mercY(37) < C.mercY(36));                       // 북쪽일수록 y가 작다(아래로 증가)
+  const n = 2 ** 15, y = Math.floor(C.mercY(36.5) * n), x = Math.floor(C.mercX(127.85) * n); // 슬리피 타일 공식과 일치
+  assert.equal(x, Math.floor((127.85 + 180) / 360 * n));
+  assert.equal(y, Math.floor((1 - Math.log(Math.tan(36.5 * Math.PI / 180) + 1 / Math.cos(36.5 * Math.PI / 180)) / Math.PI) / 2 * n));
+});

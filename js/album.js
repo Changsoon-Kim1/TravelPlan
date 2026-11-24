@@ -49,7 +49,7 @@
   }
 
   // ---- 장면(챕터) 묶기: 시간이 20분 넘게 벌어지거나 500m 넘게 떨어지면 새 장면 ----
-  function chaptersOf(photos, track) {
+  function chaptersOf(photos, track, stays) {
     const list = [];
     let cur = null;
     photos.forEach((p) => {
@@ -84,20 +84,31 @@
           c.idx = best;
         }
       }
+      // 머문 곳(식당 등): 이 장면의 위치·시각이 머묾 구간 안(앞뒤 5분 여유)이면 연결
+      c.stay = null;
+      (stays || []).forEach((st) => {
+        const inIdx = c.idx != null && c.idx >= st.i0 && c.idx <= st.i1;
+        const inTime = c.t0 != null && c.t1 >= st.t0 - 300000 && c.t0 <= st.t1 + 300000 && c.loc && C.haversineKm([c.loc.lat, c.loc.lon], [st.lat, st.lon]) * 1000 <= 150;
+        if (!c.stay && (inIdx || inTime)) c.stay = st;
+      });
     });
     return list;
   }
 
   // ---- SVG ----
   function makeProj(pts, W, minH, maxH) {
-    const lat0 = pts.reduce((a, p) => a + p[0], 0) / pts.length, kx = Math.cos(lat0 * Math.PI / 180);
-    const xs = pts.map((p) => p[1] * kx), ys = pts.map((p) => p[0]);
+    const xs = pts.map((p) => C.mercX(p[1])), ys = pts.map((p) => C.mercY(p[0]));
     const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-    const pad = 24, spanX = Math.max(maxX - minX, 1e-5), spanY = Math.max(maxY - minY, 1e-5);
+    const pad = 24, spanX = Math.max(maxX - minX, 3e-5), spanY = Math.max(maxY - minY, 3e-5); // 최소 약 600m
     const H = Math.round(Math.min(maxH, Math.max(minH, (W - 2 * pad) * spanY / spanX + 2 * pad)));
     const sc = Math.min((W - 2 * pad) / spanX, (H - 2 * pad) / spanY);
     const ox = (W - spanX * sc) / 2, oy = (H - spanY * sc) / 2;
-    return { W, H, X: (lon) => (ox + (lon * kx - minX) * sc).toFixed(1), Y: (lat) => (H - (oy + (lat - minY) * sc)).toFixed(1) };
+    const fx = (wx) => (wx - minX) * sc + ox, fy = (wy) => (wy - minY) * sc + oy;
+    return {
+      W, H, sc, fx, fy,
+      X: (lon) => fx(C.mercX(lon)).toFixed(1), Y: (lat) => fy(C.mercY(lat)).toFixed(1),
+      wx0: minX - ox / sc, wx1: minX + (W - ox) / sc, wy0: minY - oy / sc, wy1: minY + (H - oy) / sc
+    };
   }
   const line = (track, pr, a, b, maxPts) => {
     const step = Math.max(1, Math.floor((b - a + 1) / maxPts));
@@ -108,40 +119,82 @@
   const badge = (x, y, r, n, fill) => '<circle cx="' + x + '" cy="' + y + '" r="' + r + '" fill="' + (fill || '#ea580c') + '" stroke="#fff" stroke-width="2"/>' +
     '<text x="' + x + '" y="' + (+y + r * 0.38).toFixed(1) + '" font-size="' + (r * 1.05).toFixed(1) + '" font-weight="700" fill="#fff" text-anchor="middle">' + n + '</text>';
 
-  function projFor(track, chapters, W, minH, maxH) {
+  function makePr(track, photos) {
     const pts = [];
     if (track) track.forEach((p) => pts.push([p.lat, p.lon]));
-    chapters.forEach((c) => { if (c.loc) pts.push([c.loc.lat, c.loc.lon]); });
-    return pts.length ? makeProj(pts, W, minH, maxH) : null;
+    photos.forEach((p) => { if (p.loc.how !== 'none') pts.push([p.loc.lat, p.loc.lon]); });
+    return pts.length ? makeProj(pts, 640, 240, 560) : null;
   }
-  // 전체 지도: 걸은 길 + 장면 번호
-  function mapSVG(track, chapters) {
-    const pr = projFor(track, chapters, 640, 240, 560);
+
+  // ---- 배경 지도: OpenStreetMap 타일을 이어 붙여 한 장의 그림으로 (저장한 PDF/HTML에도 그대로 들어가게) ----
+  const TILE_HOSTS = ['https://tile.openstreetmap.org', 'https://tile.openstreetmap.de'];
+  function loadTile(z, x, y) {
+    const tryHost = (i) => new Promise((resolve) => {
+      if (i >= TILE_HOSTS.length) return resolve(null);
+      const img = new Image(); img.crossOrigin = 'anonymous';
+      const timer = setTimeout(() => { img.src = ''; resolve(tryHost(i + 1)); }, 9000);
+      img.onload = () => { clearTimeout(timer); resolve(img); };
+      img.onerror = () => { clearTimeout(timer); resolve(tryHost(i + 1)); };
+      img.src = TILE_HOSTS[i] + '/' + z + '/' + x + '/' + y + '.png';
+    });
+    return tryHost(0);
+  }
+  async function basemap(pr) {
+    const f = 2, cv = document.createElement('canvas');
+    cv.width = pr.W * f; cv.height = pr.H * f;
+    const g = cv.getContext('2d'); g.fillStyle = '#eef2f1'; g.fillRect(0, 0, cv.width, cv.height);
+    let z = Math.max(8, Math.min(17, Math.ceil(Math.log2(pr.sc * f / 256))));
+    const range = (zz) => { const n = 2 ** zz; return { n, x0: Math.max(0, Math.floor(pr.wx0 * n)), x1: Math.min(n - 1, Math.floor(pr.wx1 * n)), y0: Math.max(0, Math.floor(pr.wy0 * n)), y1: Math.min(n - 1, Math.floor(pr.wy1 * n)) }; };
+    let r = range(z);
+    while ((r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1) > 30 && z > 8) { z--; r = range(z); }
+    const jobs = [];
+    for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) jobs.push({ x, y });
+    let ok = 0;
+    await Promise.all(jobs.map(async (t) => {
+      const img = await loadTile(z, t.x, t.y);
+      if (!img) return;
+      ok++;
+      const x0 = pr.fx(t.x / r.n) * f, y0 = pr.fy(t.y / r.n) * f, x1 = pr.fx((t.x + 1) / r.n) * f, y1 = pr.fy((t.y + 1) / r.n) * f;
+      g.drawImage(img, x0, y0, x1 - x0 + 0.6, y1 - y0 + 0.6);
+    }));
+    if (!ok) return null;
+    return cv.toDataURL('image/jpeg', 0.85); // 캔버스가 오염되면(타일 서버가 허용 안 함) 여기서 예외 → 호출 쪽에서 처리
+  }
+  const bgUse = (pr) => '<use href="#bgmap" x="0" y="0"/>';
+
+  const stayRing = (pr, c, r) => c.stay ? '<circle cx="' + pr.X(c.loc.lon) + '" cy="' + pr.Y(c.loc.lat) + '" r="' + r + '" fill="#ea580c" fill-opacity=".14" stroke="#ea580c" stroke-width="2" stroke-dasharray="5 4"/>' : '';
+  // 전체 지도: 배경 지도 + 걸은 길 + 장면 번호(머문 곳은 점선 원)
+  function mapSVG(track, chapters, pr, hasBg) {
     if (!pr) return '';
-    let h = '<svg class="map" viewBox="0 0 ' + pr.W + ' ' + pr.H + '" role="img" aria-label="걸은 길과 장면 위치(북쪽이 위)">';
+    let h = '<svg class="map" viewBox="0 0 ' + pr.W + ' ' + pr.H + '" role="img" aria-label="걸은 길과 장면 위치(북쪽이 위)">' + (hasBg ? bgUse(pr) : '');
     if (track) {
       const l = line(track, pr, 0, track.length - 1, 900);
-      h += '<polyline points="' + l + '" fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>' +
-        '<polyline points="' + l + '" fill="none" stroke="#0f766e" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>';
+      h += '<polyline points="' + l + '" fill="none" stroke="#fff" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>' +
+        '<polyline points="' + l + '" fill="none" stroke="#0f766e" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>';
       const f = track[0], e = track[track.length - 1];
-      h += '<circle cx="' + pr.X(f.lon) + '" cy="' + pr.Y(f.lat) + '" r="6" fill="#16a34a" stroke="#fff" stroke-width="2"/>' +
-        '<circle cx="' + pr.X(e.lon) + '" cy="' + pr.Y(e.lat) + '" r="6" fill="#dc2626" stroke="#fff" stroke-width="2"/>';
+      h += '<circle cx="' + pr.X(f.lon) + '" cy="' + pr.Y(f.lat) + '" r="7" fill="#16a34a" stroke="#fff" stroke-width="2.5"/>' +
+        '<circle cx="' + pr.X(e.lon) + '" cy="' + pr.Y(e.lat) + '" r="7" fill="#dc2626" stroke="#fff" stroke-width="2.5"/>';
     }
-    chapters.forEach((c) => { if (c.loc) h += badge(pr.X(c.loc.lon), pr.Y(c.loc.lat), 11, c.n); });
+    chapters.forEach((c) => { if (c.loc) h += stayRing(pr, c, 19) + badge(pr.X(c.loc.lon), pr.Y(c.loc.lat), 11, c.n); });
+    if (hasBg) h += '<text x="' + (pr.W - 6) + '" y="' + (pr.H - 6) + '" font-size="10" text-anchor="end" fill="#334155" stroke="#fff" stroke-width="3" paint-order="stroke">© OpenStreetMap contributors</text>';
     return h + '</svg>';
   }
-  // 장면별 작은 지도: 지금까지 걸은 길(진하게) + 앞으로 갈 길(연하게) + 이 장면
-  function miniSVG(track, chapters, c, pr) {
+  // 장면별 작은 지도: 전체 지도를 이 장면 주변으로 잘라서 보여 준다. 지금까지 걸은 길은 진하게, 앞으로 갈 길은 연하게.
+  function miniSVG(track, chapters, c, pr, hasBg) {
     if (!pr || !c.loc) return '';
-    let h = '<svg class="mini" viewBox="0 0 ' + pr.W + ' ' + pr.H + '" role="img" aria-label="장면 ' + c.n + ' 위치">';
+    const cw = pr.W * 0.55, ch = pr.H * 0.55;
+    let x = +pr.X(c.loc.lon) - cw / 2, y = +pr.Y(c.loc.lat) - ch / 2;
+    x = Math.max(0, Math.min(pr.W - cw, x)); y = Math.max(0, Math.min(pr.H - ch, y));
+    let h = '<svg class="mini" viewBox="' + x.toFixed(1) + ' ' + y.toFixed(1) + ' ' + cw.toFixed(1) + ' ' + ch.toFixed(1) + '" role="img" aria-label="장면 ' + c.n + ' 위치">' + (hasBg ? bgUse(pr) : '<rect x="0" y="0" width="' + pr.W + '" height="' + pr.H + '" fill="#f8fafc"/>');
     if (track) {
-      h += '<polyline points="' + line(track, pr, 0, track.length - 1, 260) + '" fill="none" stroke="#cbd5e1" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>';
-      if (c.idx != null && c.idx > 0) h += '<polyline points="' + line(track, pr, 0, c.idx, 260) + '" fill="none" stroke="#0f766e" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>';
-      h += '<circle cx="' + pr.X(track[0].lon) + '" cy="' + pr.Y(track[0].lat) + '" r="5" fill="#16a34a" stroke="#fff" stroke-width="2"/>';
+      h += '<polyline points="' + line(track, pr, 0, track.length - 1, 500) + '" fill="none" stroke="#fff" stroke-width="9" stroke-linejoin="round" stroke-linecap="round" opacity=".85"/>' +
+        '<polyline points="' + line(track, pr, 0, track.length - 1, 500) + '" fill="none" stroke="#94a3b8" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>';
+      if (c.idx != null && c.idx > 0) h += '<polyline points="' + line(track, pr, 0, c.idx, 500) + '" fill="none" stroke="#0f766e" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>';
+      h += '<circle cx="' + pr.X(track[0].lon) + '" cy="' + pr.Y(track[0].lat) + '" r="7" fill="#16a34a" stroke="#fff" stroke-width="2.5"/>';
     } else {
-      chapters.forEach((o) => { if (o.loc && o !== c) h += '<circle cx="' + pr.X(o.loc.lon) + '" cy="' + pr.Y(o.loc.lat) + '" r="4" fill="#cbd5e1"/>'; });
+      chapters.forEach((o) => { if (o.loc && o !== c) h += '<circle cx="' + pr.X(o.loc.lon) + '" cy="' + pr.Y(o.loc.lat) + '" r="5" fill="#94a3b8" stroke="#fff" stroke-width="2"/>'; });
     }
-    return h + '<circle cx="' + pr.X(c.loc.lon) + '" cy="' + pr.Y(c.loc.lat) + '" r="15" fill="#ea580c" fill-opacity=".22"/>' + badge(pr.X(c.loc.lon), pr.Y(c.loc.lat), 10, c.n) + '</svg>';
+    return h + (c.stay ? stayRing(pr, c, 24) : '<circle cx="' + pr.X(c.loc.lon) + '" cy="' + pr.Y(c.loc.lat) + '" r="19" fill="#ea580c" fill-opacity=".2"/>') + badge(pr.X(c.loc.lon), pr.Y(c.loc.lat), 13, c.n) + '</svg>';
   }
   function elevSVG(track, chapters, cum) {
     const hasEle = track && track.filter((p) => p.ele != null).length > track.length * 0.8;
@@ -175,9 +228,12 @@
   const fmtKm = (k) => (k < 0.1 ? Math.round(k * 1000) + 'm' : k.toFixed(1) + 'km');
   const durShort = (sec) => { const m = Math.max(1, Math.round(sec / 60)); return m >= 60 ? Math.floor(m / 60) + '시간 ' + (m % 60 ? m % 60 + '분' : '') : m + '분'; };
 
-  function chapterHTML(c, prev, track, cum, chapters, pr) {
-    const when = c.t0 == null ? '시각 모름' : (c.t1 !== c.t0 && hm(c.t1) !== hm(c.t0) ? hm(c.t0) + ' ~ ' + hm(c.t1) : hm(c.t0));
+  function chapterHTML(c, prev, track, cum, chapters, pr, hasBg) {
+    let when = c.t0 == null ? '시각 모름' : (c.t1 !== c.t0 && hm(c.t1) !== hm(c.t0) ? hm(c.t0) + ' ~ ' + hm(c.t1) : hm(c.t0));
+    if (c.stay) when = hm(c.stay.t0) + ' ~ ' + hm(c.stay.t1);
     let meta = '';
+    if (c.stay) meta += '<span class="stay">⏸ 여기서 <b>' + durShort(c.stay.sec) + '</b> 머물렀어요</span>';
+    else if (c.t0 != null && c.t1 - c.t0 >= 600000) meta += '<span class="stay">📸 ' + durShort((c.t1 - c.t0) / 1000) + ' 동안 찍은 사진</span>';
     if (c.ele != null) meta += '<span>⛰ 고도 ' + Math.round(c.ele) + 'm</span>';
     if (track && c.idx != null) {
       meta += '<span>🚶 출발 후 ' + fmtKm(cum[c.idx]) + ' · ' + durShort((track[c.idx].t - track[0].t) / 1000) + '</span>';
@@ -197,22 +253,23 @@
     const uniq = warns.filter((w, i) => warns.indexOf(w) === i);
     const src = c.photos.map((p) => HOW[p.loc.how]).filter((w, i, a) => a.indexOf(w) === i).join(' · ');
     const imgs = c.photos.map((p, i) => p.thumb ? '<img class="' + (i === 0 && c.photos.length % 2 === 1 ? 'wide' : '') + '" alt="장면 ' + c.n + ' 사진" src="' + p.thumb.url + '">' : '<div class="noimg muted">미리보기 없음<br>' + esc(p.name) + '</div>').join('');
-    return '<section class="chap"><div class="chead">' + (c.loc ? '<div class="cmap">' + miniSVG(track, chapters, c, pr) + '</div>' : '') +
+    return '<section class="chap"><div class="chead">' + (c.loc ? '<div class="cmap">' + miniSVG(track, chapters, c, pr, hasBg) + '</div>' : '') +
       '<div class="cinfo"><div class="ctitle"><span class="no">' + c.n + '</span><b>' + esc(when) + '</b></div>' + meta +
       '<div class="src">' + esc(src) + '</div>' + uniq.map((w) => '<div class="warn">' + esc(w) + '</div>').join('') + '</div></div>' +
       '<div class="memo" contenteditable="true" data-ph="이 장면에 한 줄 메모…" spellcheck="false"></div>' +
       '<div class="shots n' + Math.min(c.photos.length, 3) + '">' + imgs + '</div></section>';
   }
 
-  function buildReport(title, track, photos) {
+  function buildReport(title, track, photos, pr, bgUrl) {
     const stats = track ? C.trackStats(track) : null;
     photos.forEach((p) => { p._trackStart = track ? track[0].t : 0; });
-    const chapters = chaptersOf(photos, track);
+    const stays = track ? C.findStays(track, 60, 300) : [];
+    const chapters = chaptersOf(photos, track, stays);
     const cum = [0];
     if (track) for (let i = 1; i < track.length; i++) cum.push(cum[i - 1] + C.haversineKm([track[i - 1].lat, track[i - 1].lon], [track[i].lat, track[i].lon]));
     const first = stats ? stats.start : (photos.find((p) => p.tAdj != null) || {}).tAdj;
     const last = stats ? stats.end : null;
-    let h = '<article class="rp" id="rp"><h1>' + esc(title) + '</h1><div class="rp-sub">' +
+    let h = '<article class="rp" id="rp">' + (bgUrl ? '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><image id="bgmap" href="' + bgUrl + '" x="0" y="0" width="' + pr.W + '" height="' + pr.H + '"/></defs></svg>' : '') + '<h1>' + esc(title) + '</h1><div class="rp-sub">' +
       (first != null ? esc(dayLabel(first)) : '') + (stats ? ' · ' + hm(stats.start) + ' ~ ' + hm(last) : '') + ' · 사진 ' + photos.length + '장 · 장면 ' + chapters.length + '곳</div>';
     if (stats) {
       h += '<section class="rp-sec"><div class="stats">' +
@@ -221,16 +278,15 @@
         '<div><small>누적 오르막</small><b>' + Math.round(stats.up) + 'm</b><small>내리막 ' + Math.round(stats.down) + 'm</small></div>' +
         '<div><small>고도</small><b>' + (stats.max != null ? Math.round(stats.max) + 'm' : '–') + '</b><small>최저 ' + (stats.min != null ? Math.round(stats.min) + 'm' : '–') + '</small></div></div></section>';
     }
-    const m = mapSVG(track, chapters);
-    if (m) h += '<section class="rp-sec">' + m + '<div class="muted sm">초록 시작 · 빨강 끝 · 주황 번호는 아래 이야기의 장면 번호</div></section>';
+    const m = mapSVG(track, chapters, pr, !!bgUrl);
+    if (m) h += '<section class="rp-sec">' + m + '<div class="muted sm">초록 시작 · 빨강 끝 · 주황 번호는 아래 이야기의 장면 번호 · 점선 원은 머문 곳</div></section>';
     const e = elevSVG(track, chapters, cum);
     if (e) h += '<section class="rp-sec">' + e + '</section>';
     h += '<section class="rp-sec story"><h2>이야기</h2>';
-    const pr = projFor(track, chapters, 300, 150, 260);
     let prev = null;
-    chapters.forEach((c) => { h += chapterHTML(c, prev, track, cum, chapters, pr); if (c.idx != null) prev = c; });
+    chapters.forEach((c) => { h += chapterHTML(c, prev, track, cum, chapters, pr, !!bgUrl); if (c.idx != null) prev = c; });
     h += '</section><div class="foot">이 리포트는 이 기기에서만 만들어졌고 서버에 저장되지 않았어요 · 만든 날 ' + esc(new Date().toISOString().slice(0, 10)) + '</div></article>';
-    window.__albumChapters = chapters.map((c) => ({ n: c.n, photos: c.photos.length, idx: c.idx, hasMap: !!c.loc }));
+    window.__albumChapters = chapters.map((c) => ({ n: c.n, photos: c.photos.length, idx: c.idx, hasMap: !!c.loc, stayMin: c.stay ? Math.round(c.stay.sec / 60) : 0 }));
     return h;
   }
 
@@ -261,10 +317,17 @@
       }
       photos.forEach((p) => place(p, track, shiftSec));
       photos.sort((a, b) => (a.tAdj == null) - (b.tAdj == null) || a.tAdj - b.tAdj);
+      const pr = makePr(track, photos);
+      let bgUrl = null;
+      if (pr && $('bg').checked) {
+        prog.textContent = '배경 지도 받는 중…';
+        try { bgUrl = await basemap(pr); } catch (e) { bgUrl = null; }
+        if (!bgUrl) { err.textContent = '배경 지도를 불러오지 못해 길만 표시했어요. (인터넷 연결을 확인하거나 배경 지도를 끄고 만들 수 있어요)'; err.hidden = false; }
+      }
       const st = track ? C.trackStats(track) : null;
       const title = $('title').value.trim() || (st ? dayLabel(st.start) + ' 기록' : '사진 앨범');
       $('out').innerHTML = '<div class="bar noprint" style="margin:0 0 10px"><button class="btn primary" id="doPrint" type="button">🖨 PDF로 저장 / 인쇄</button>' +
-        '<button class="btn" id="doSave" type="button">💾 HTML 파일로 저장</button></div>' + buildReport(title, track, photos);
+        '<button class="btn" id="doSave" type="button">💾 HTML 파일로 저장</button></div>' + buildReport(title, track, photos, pr, bgUrl);
       $('doPrint').onclick = () => window.print();
       $('doSave').onclick = () => saveHtml(title);
       const located = photos.filter((p) => p.loc.how !== 'none').length;

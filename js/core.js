@@ -272,6 +272,37 @@
     const f = track[0], l = track[track.length - 1];
     return { km: dist, start: f.t, end: l.t, totalSec: (l.t - f.t) / 1000, movingSec: moving, up, down, min: min === Infinity ? null : min, max: max === -Infinity ? null : max };
   }
+  // 웹 메르카토르 세계 좌표(0~1, y는 아래로): 타일 지도와 정확히 겹치게 그리기 위해 사용
+  const mercX = (lon) => (lon + 180) / 360;
+  const mercY = (lat) => { const sn = Math.sin(Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI / 180); return 0.5 - Math.log((1 + sn) / (1 - sn)) / (4 * Math.PI); };
+  // 머문 곳 찾기: 한 점에서 radiusM 안에 minSec 이상 머물면 하나의 '머묾'. [{i0,i1,t0,t1,sec,lat,lon}]
+  function findStays(track, radiusM, minSec) {
+    radiusM = radiusM || 60; minSec = minSec || 300;
+    const out = [], n = track ? track.length : 0;
+    let i = 0;
+    while (i < n - 1) {
+      let j = i + 1;
+      while (j < n && haversineKm([track[i].lat, track[i].lon], [track[j].lat, track[j].lon]) * 1000 <= radiusM) j++;
+      const e = j - 1;
+      if (e > i && track[e].t - track[i].t >= minSec * 1000) {
+        let la = 0, lo = 0;
+        for (let k = i; k <= e; k++) { la += track[k].lat; lo += track[k].lon; }
+        out.push({ i0: i, i1: e, t0: track[i].t, t1: track[e].t, sec: (track[e].t - track[i].t) / 1000, lat: la / (e - i + 1), lon: lo / (e - i + 1) });
+        i = j;
+      } else i++;
+    }
+    // 바로 이어지는 머묾(조금씩 움직이며 쉰 경우)은 하나로 합친다
+    const merged = [];
+    out.forEach((st) => {
+      const prev = merged[merged.length - 1];
+      if (prev && st.t0 - prev.t1 <= 120000 && haversineKm([prev.lat, prev.lon], [st.lat, st.lon]) * 1000 <= 150) {
+        const w1 = prev.i1 - prev.i0 + 1, w2 = st.i1 - st.i0 + 1;
+        prev.lat = (prev.lat * w1 + st.lat * w2) / (w1 + w2); prev.lon = (prev.lon * w1 + st.lon * w2) / (w1 + w2);
+        prev.i1 = st.i1; prev.t1 = st.t1; prev.sec = (prev.t1 - prev.t0) / 1000;
+      } else merged.push(st);
+    });
+    return merged;
+  }
   // 파일 이름에서 코스 번호 추측: "올레 10코스.gpx", "olle_03-A", "7-1코스" ...
   function guessCourseId(filename, validIds) {
     const name = String(filename).replace(/\.[^.]+$/, '');
@@ -339,7 +370,7 @@
   }
 
   const api = {
-    searchTerms, elevationProfile, parseGpxTrack, nameTime, locateOnTrack, trackStats,
+    searchTerms, elevationProfile, mercX, mercY, findStays, parseGpxTrack, nameTime, locateOnTrack, trackStats,
     PALETTE, mainNum, areAdjacent, assignColors,
     pad2, toMin, fromMin, normTime, parseISO, toISO, addDays, weekday, dateRange, daysInMonth, defaultEnd,
     eventCoversDay, compareEvents, findOverlaps,

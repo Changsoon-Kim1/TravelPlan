@@ -39,6 +39,7 @@ svg.map, svg.elev { width: 100%; height: auto; display: block; background: #f8fa
 .cinfo { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; }
 .cinfo span { display: block; color: #334155; }
 .cinfo .leg { color: #0f766e; }
+.cinfo .stay { color: #c2410c; }
 .ctitle { display: flex; align-items: center; gap: 6px; font-size: 16px; margin-bottom: 2px; }
 .no { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: #ea580c; color: #fff; font-weight: 700; font-size: 13px; }
 .src { color: var(--muted); font-size: 12px; margin-top: 2px; } .warn { color: #b45309; font-size: 12px; }
@@ -64,7 +65,7 @@ svg.map, svg.elev { width: 100%; height: auto; display: block; background: #f8fa
   <div class="card noprint" id="setup">
     <h1>📸 여행 앨범 리포트</h1>
     <div class="muted sm">하루 GPX 기록과 사진을 시간으로 맞춰, 걸은 길 위에 사진을 올린 리포트를 만들어요.</div>
-    <div class="privacy">🔒 사진과 GPX는 <b>이 기기의 브라우저 안에서만</b> 처리돼요. 서버로 보내거나 저장하지 않아요. (만든 리포트는 PDF나 HTML 파일로 내 기기에 저장할 수 있어요.)</div>
+    <div class="privacy">🔒 사진과 GPX는 <b>이 기기의 브라우저 안에서만</b> 처리돼요. 서버로 보내거나 저장하지 않아요. 만든 리포트는 PDF나 HTML 파일로 내 기기에 저장해요.<br>🗺 <b>배경 지도</b>를 켜면 지도 조각(타일)만 OpenStreetMap에서 받아요. 이때 지도 구역의 좌표는 전달되지만 사진·GPX 내용은 나가지 않아요.</div>
     <label for="gpxFile">① GPX 기록 <span class="muted">(하루치 1개, 없어도 돼요)</span></label>
     <input type="file" id="gpxFile" accept=".gpx,application/gpx+xml,text/xml,application/xml">
     <label for="photoFiles">② 사진 <span class="muted">(여러 장 선택)</span></label>
@@ -78,14 +79,15 @@ svg.map, svg.elev { width: 100%; height: auto; display: block; background: #f8fa
     </div>
     <label for="title">리포트 제목 <span class="muted">(비우면 자동)</span></label>
     <input type="text" id="title" maxlength="80" placeholder="예: 속리산 산행">
+    <label style="font-weight:500;margin-top:12px"><input type="checkbox" id="bg" checked> 배경 지도 넣기 (OpenStreetMap)</label>
     <div class="bar"><button class="btn primary" id="make" type="button">리포트 만들기</button></div>
     <div id="progress" aria-live="polite"></div>
     <div class="err" id="err" hidden></div>
   </div>
   <div id="out"></div>
 </div>
-<script src="js/core.js?v=202611241708"></script>
-<script src="js/exif.js?v=202611241708"></script>
-<script src="js/album.js?v=202611241708"></script>
+<script src="js/core.js?v=202611241716"></script>
+<script src="js/exif.js?v=202611241716"></script>
+<script src="js/album.js?v=202611241716"></script>
 </body>
 </html>
