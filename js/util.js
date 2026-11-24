@@ -31,6 +31,12 @@
     if (!/:/.test(txt.split('~').pop())) txt += '시';
     return md(ev.day) + ' ' + txt;
   }
+  // 장소 일정 핀 꼬리표: 시간 빼고 날짜 + 이름. "4/14 신라호텔", 여러 날이면 "4/14~4/15 신라호텔"
+  function fmtPinTag(ev) {
+    const md = (iso) => { const p = TPCore.parseISO(iso); return p.m + '/' + p.d; };
+    const d = ev.end_day && ev.end_day !== ev.day ? md(ev.day) + '~' + md(ev.end_day) : md(ev.day);
+    return d + ' ' + ev.title;
+  }
   function todayISO() {
     const d = new Date();
     return TPCore.toISO(d.getFullYear(), d.getMonth() + 1, d.getDate());
@@ -78,5 +84,5 @@
     jejuBus: 'https://bus.jeju.go.kr/'
   };
 
-  window.TPUtil = { $, $$, esc, KIND, WD, fmtDay, fmtTimeRange, fmtTag, todayISO, toast, openModal, closeModal, links };
+  window.TPUtil = { $, $$, esc, KIND, WD, fmtDay, fmtTimeRange, fmtTag, fmtPinTag, todayISO, toast, openModal, closeModal, links };
 })();
