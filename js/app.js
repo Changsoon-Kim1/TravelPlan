@@ -52,6 +52,7 @@ window.App = (function () {
       const act = b.dataset.act;
       if (act === 'share') TPDialogs.openShareModal();
       else if (act === 'trips') TPTrips.open();
+      else if (act === 'album') window.open('album.html', '_blank', 'noopener');
       else if (act === 'gpx') TPDialogs.openGpxModal();
       else if (act === 'refresh') refresh(false);
       else if (act === 'login') TPDialogs.openLoginModal();

@@ -202,6 +202,76 @@
     }
     return { d, e, min: Math.min(...e), max: Math.max(...e), up, down, total: d[d.length - 1] };
   }
+  // ---------- 시간이 있는 GPX 기록 (사진 앨범용) ----------
+  // [{lat, lon, ele, t(ms)}] — 시간이 없는 점은 건너뛴다
+  function parseGpxTrack(text) {
+    const out = [];
+    const chunks = String(text).split(/<(?:trkpt|rtept)\b/i);
+    for (let i = 1; i < chunks.length; i++) {
+      const ch = chunks[i];
+      const gt = ch.indexOf('>');
+      if (gt < 0 || ch.slice(gt - 1, gt) === '/') continue;
+      const attrs = ch.slice(0, gt);
+      const lat = /\blat\s*=\s*["']([-\d.eE+]+)["']/.exec(attrs), lon = /\blon\s*=\s*["']([-\d.eE+]+)["']/.exec(attrs);
+      if (!lat || !lon) continue;
+      const end = ch.search(/<\/(?:trkpt|rtept)>/i);
+      const body = end >= 0 ? ch.slice(gt + 1, end) : ch.slice(gt + 1, gt + 400);
+      const tm = /<time>\s*([^<\s]+)\s*<\/time>/i.exec(body);
+      const t = tm ? Date.parse(tm[1]) : NaN;
+      const la = parseFloat(lat[1]), lo = parseFloat(lon[1]);
+      if (!isFinite(t) || !(Math.abs(la) <= 90 && Math.abs(lo) <= 180)) continue;
+      const em = /<ele>\s*([-\d.eE+]+)\s*<\/ele>/i.exec(body);
+      out.push({ lat: la, lon: lo, ele: em ? parseFloat(em[1]) : null, t });
+    }
+    out.sort((a, b) => a.t - b.t);
+    return out;
+  }
+  // 파일 이름 속 촬영 시각: 20261122_141814 / 2026-11-22 14.18.14 등 → UTC ms (이름의 시각은 현지 시각이라 tzMin(분, 한국 540)을 뺀다)
+  function nameTime(name, tzMin) {
+    const m = /(20\d{2})[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01])[-_. T]?([01]\d|2[0-3])[-_.:]?([0-5]\d)[-_.:]?([0-5]\d)/.exec(String(name));
+    if (!m) return null;
+    return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) - (tzMin == null ? 540 : tzMin) * 60000;
+  }
+  // 기록에서 시각 t(ms)의 위치. 기록 안이면 앞뒤 점을 이어 계산, 밖이면 가장 가까운 끝점(maxGapSec 이내만).
+  // 반환: { lat, lon, ele, gapSec(기록 밖이면 끝점까지 초), inside, approx(앞뒤 점 간격이 2분 넘음) } 또는 null
+  function locateOnTrack(track, t, maxGapSec) {
+    if (!track || !track.length || !isFinite(t)) return null;
+    maxGapSec = maxGapSec == null ? 600 : maxGapSec;
+    const first = track[0], last = track[track.length - 1];
+    if (t < first.t || t > last.t) {
+      const e = t < first.t ? first : last, gap = Math.abs(t - e.t) / 1000;
+      return gap <= maxGapSec ? { lat: e.lat, lon: e.lon, ele: e.ele, gapSec: gap, inside: false, approx: true } : null;
+    }
+    let lo = 0, hi = track.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (track[mid].t <= t) lo = mid; else hi = mid; }
+    const a = track[lo], b = track[hi], span = b.t - a.t;
+    const f = span > 0 ? (t - a.t) / span : 0;
+    return {
+      lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f,
+      ele: a.ele != null && b.ele != null ? a.ele + (b.ele - a.ele) * f : (a.ele != null ? a.ele : b.ele),
+      gapSec: 0, inside: true, approx: span > 120000
+    };
+  }
+  // 기록 요약: 거리·시간·누적 오르막/내리막(3m 미만 흔들림 무시)·최고/최저 고도
+  function trackStats(track) {
+    if (!track || track.length < 2) return null;
+    let dist = 0, moving = 0, up = 0, down = 0, ref = null, min = Infinity, max = -Infinity;
+    for (let i = 0; i < track.length; i++) {
+      const p = track[i];
+      if (p.ele != null) {
+        min = Math.min(min, p.ele); max = Math.max(max, p.ele);
+        if (ref === null) ref = p.ele;
+        else if (Math.abs(p.ele - ref) >= 3) { if (p.ele > ref) up += p.ele - ref; else down += ref - p.ele; ref = p.ele; }
+      }
+      if (i > 0) {
+        const q = track[i - 1], d = haversineKm([q.lat, q.lon], [p.lat, p.lon]), dt = (p.t - q.t) / 1000;
+        dist += d;
+        if (dt > 0 && dt <= 120 && d * 1000 / dt > 0.3) moving += dt;
+      }
+    }
+    const f = track[0], l = track[track.length - 1];
+    return { km: dist, start: f.t, end: l.t, totalSec: (l.t - f.t) / 1000, movingSec: moving, up, down, min: min === Infinity ? null : min, max: max === -Infinity ? null : max };
+  }
   // 파일 이름에서 코스 번호 추측: "올레 10코스.gpx", "olle_03-A", "7-1코스" ...
   function guessCourseId(filename, validIds) {
     const name = String(filename).replace(/\.[^.]+$/, '');
@@ -269,7 +339,7 @@
   }
 
   const api = {
-    searchTerms, elevationProfile,
+    searchTerms, elevationProfile, parseGpxTrack, nameTime, locateOnTrack, trackStats,
     PALETTE, mainNum, areAdjacent, assignColors,
     pad2, toMin, fromMin, normTime, parseISO, toISO, addDays, weekday, dateRange, daysInMonth, defaultEnd,
     eventCoversDay, compareEvents, findOverlaps,
