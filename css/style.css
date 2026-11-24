@@ -242,3 +242,6 @@ input[type=checkbox] { width: 18px; height: 18px; }
 .pin-pop b { font-size: 14px; }
 .pin-act { display: flex; gap: 6px; margin-top: 8px; }
 .btn.danger { color: #b91c1c; }
+
+.pin.fav .pin-dot { background: #f59e0b; }
+.pin.fav .pin-tag { background: rgba(255,255,255,.94); color: #92400e; border: 1px solid #f59e0b; line-height: 13px; }

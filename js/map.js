@@ -5,7 +5,8 @@
 
   let map = null;
   let ready = false;
-  let pinLayer = null, searchLayer = null;
+  let pinLayer = null, searchLayer = null, favLayer = null;
+  const favMarkers = {};
   const pinMarkers = {};      // eventId -> marker
   let onPickPlace = () => {};  // 지도를 길게 눌렀을 때
   let colors = {};
@@ -27,14 +28,14 @@
   // 내 일정에 든 코스는 굵고 진하게, 아닌 코스는 가늘고 연하게 (선택하면 둘 다 잠시 강조)
   function lineStyle(c, exact) {
     const sel = selectedId === c.id, sch = scheduled.has(c.id);
-    const weight = sch ? (sel ? 9 : 7) : (sel ? 5 : 3);
+    const weight = sch ? (sel ? 7 : 5) : (sel ? 5 : 3);
     const opacity = (sch || sel) ? 1 : 0.3;
     return { color: colors[c.id], weight, opacity, dashArray: exact ? null : (sch ? '12 8' : '8 8'), lineCap: 'round', lineJoin: 'round' };
   }
   // 선 아래에 깔리는 흰 테두리: 일정 코스는 두껍게, 나머지는 얇고 연하게
   function casingStyle(c) {
     const sel = selectedId === c.id, sch = scheduled.has(c.id);
-    const weight = sch ? (sel ? 13 : 11) : (sel ? 8 : 5);
+    const weight = sch ? (sel ? 10 : 8) : (sel ? 8 : 5);
     return { color: '#fff', weight, opacity: (sch || sel) ? 0.95 : 0.25, lineCap: 'round', lineJoin: 'round', interactive: false };
   }
   // 일정 코스 꼬리표: "4/12(월) 10:00~15:00" (같은 코스를 여러 번 잡았으면 가장 이른 일정 + 건수)
@@ -89,11 +90,16 @@
       (e.place && e.place !== e.title ? '<div class="muted sm">📍 ' + esc(e.place) + '</div>' : '') +
       (canEdit ? '<div class="pin-act"><button class="btn small" data-pin-edit="' + esc(e.id) + '">수정</button><button class="btn small danger" data-pin-del="' + esc(e.id) + '">삭제</button></div>' : '') + '</div>';
   }
+  function placePopupHtml(pl) {
+    return '<div class="pin-pop"><b>⭐ ' + esc(pl.name) + '</b>' + (pl.addr ? '<div class="muted sm">' + esc(pl.addr) + '</div>' : '') +
+      (TPData.canEdit() ? '<div class="pin-act"><button class="btn small primary" data-place-add="' + esc(pl.id) + '">📅 일정에 추가</button>' +
+        '<button class="btn small danger" data-place-del="' + esc(pl.id) + '">표시 해제</button></div>' : '') + '</div>';
+  }
   let foundPlace = null;
   function foundPopupHtml(p) {
     foundPlace = p;
     return '<div class="pin-pop"><b>' + esc(p.name) + '</b>' + (p.addr ? '<div class="muted sm">' + esc(p.addr) + '</div>' : '') +
-      (TPData.canEdit() ? '<div class="pin-act"><button class="btn small primary" data-found-add="1">📅 일정에 추가</button></div>' : '') + '</div>';
+      (TPData.canEdit() ? '<div class="pin-act"><button class="btn small" data-found-mark="1">⭐ 지도에 표시</button><button class="btn small primary" data-found-add="1">📅 일정에 추가</button></div>' : '') + '</div>';
   }
 
   function addBaseLayers() {
@@ -103,6 +109,12 @@
       if (!b) return;
       if (b.dataset.pinEdit) { const e = S.events.find((x) => x.id === b.dataset.pinEdit); map.closePopup(); if (e) TPDialogs.openEventModal({ event: e }); }
       else if (b.dataset.pinDel) { map.closePopup(); TPDialogs.deleteEvent(b.dataset.pinDel); }
+      else if (b.dataset.foundMark && foundPlace) { const p = foundPlace; map.closePopup(); App.markPlace(p); }
+      else if (b.dataset.placeDel) { map.closePopup(); App.unmarkPlace(b.dataset.placeDel); }
+      else if (b.dataset.placeAdd) {
+        const pl = S.places.find((x) => x.id === b.dataset.placeAdd); map.closePopup();
+        if (pl) TPDialogs.openEventModal({ defaults: { kind: 'other', title: pl.name, place: pl.name, lat: pl.lat, lng: pl.lng } });
+      }
       else if (b.dataset.foundAdd && foundPlace) {
         const p = foundPlace; map.closePopup(); searchLayer.clearLayers();
         TPDialogs.openEventModal({ defaults: { kind: 'other', title: p.name, place: p.name, lat: p.lat, lng: p.lng } });
@@ -150,6 +162,7 @@
       L.control.zoom({ position: 'bottomright' }).addTo(map);
       map.attributionControl.setPrefix(false);
       pinLayer = L.layerGroup().addTo(map);
+      favLayer = L.layerGroup().addTo(map);
       searchLayer = L.layerGroup().addTo(map);
       onPickPlace = opts.onPickPlace || onPickPlace;
       map.on('contextmenu', (e) => onPickPlace(e.latlng.lat, e.latlng.lng)); // 길게 누르기(PC는 우클릭)
@@ -195,6 +208,30 @@
       const m = pinMarkers[id];
       if (!m || !ready) return false;
       map.setView(m.getLatLng(), Math.max(map.getZoom(), 14));
+      m.openPopup();
+      return true;
+    },
+    // 관심 장소(날짜 없이 지도에만 ⭐ 표시)
+    setPlacePins(places) {
+      if (!ready) return;
+      favLayer.clearLayers();
+      Object.keys(favMarkers).forEach((k) => delete favMarkers[k]);
+      places.forEach((pl) => {
+        const icon = L.divIcon({
+          className: 'pin-wrap',
+          html: '<div class="pin fav"><span class="pin-dot">⭐</span><span class="pin-tag">' + esc(pl.name) + '</span></div>',
+          iconSize: null
+        });
+        const m = L.marker([pl.lat, pl.lng], { icon, riseOnHover: true, zIndexOffset: 550 });
+        m.bindPopup(() => placePopupHtml(pl), { closeButton: true, minWidth: 190 });
+        m.addTo(favLayer);
+        favMarkers[pl.id] = m;
+      });
+    },
+    showPlace(id) {
+      const m = favMarkers[id];
+      if (!m || !ready) return false;
+      map.setView(m.getLatLng(), Math.max(map.getZoom(), 15));
       m.openPopup();
       return true;
     },

@@ -2,7 +2,7 @@
 window.S = {
   trip: null, events: [], routes: {}, colors: {},
   view: 'map', selectedCourse: null,
-  selectedDay: null, calMonth: '2027-04', calMode: 'grid', filter: 'all'
+  places: [], selectedDay: null, calMonth: '2027-04', calMode: 'grid', filter: 'all'
 };
 
 window.App = (function () {
@@ -77,7 +77,7 @@ window.App = (function () {
   }
 
   function resetState() {
-    S.trip = null; S.events = []; S.routes = {};
+    S.trip = null; S.events = []; S.routes = {}; S.places = [];
     if (TPMap.ready()) TPMap.setRoutes({});
     TPPanel.close();
   }
@@ -136,6 +136,29 @@ window.App = (function () {
     });
     q.addEventListener('input', () => { if (!q.value) { hide(); TPMap.clearFound(); } });
   }
+  // 관심 장소로 지도에 ⭐ 표시 (날짜 없음)
+  async function markPlace(p) {
+    if (!TPData.canEdit()) { toast('읽기 전용 링크라서 수정할 수 없어요', 'err'); return; }
+    const dup = S.places.find((x) => Math.abs(x.lat - p.lat) < 0.0002 && Math.abs(x.lng - p.lng) < 0.0002);
+    if (dup) { toast('이미 표시한 장소예요'); TPMap.clearFound(); TPMap.showPlace(dup.id); return; }
+    try {
+      const saved = await TPData.savePlace({ name: p.name, addr: p.addr, lat: p.lat, lng: p.lng });
+      S.places.push(saved);
+      TPMap.clearFound();
+      TPMap.setPlacePins(S.places);
+      toast('지도에 ⭐ 표시했어요');
+    } catch (err) { toast(err.message || '표시하지 못했어요', 'err'); }
+  }
+  async function unmarkPlace(id) {
+    const pl = S.places.find((x) => x.id === id);
+    if (!pl || !confirm('"' + pl.name + '" 표시를 해제할까요?')) return;
+    try {
+      await TPData.deletePlace(id);
+      S.places = S.places.filter((x) => x.id !== id);
+      TPMap.setPlacePins(S.places);
+      toast('표시를 해제했어요');
+    } catch (err) { toast(err.message || '해제하지 못했어요', 'err'); }
+  }
   async function pickPlace(lat, lng) {
     TPUtil.toast('위치 확인 중…');
     const info = await TPPlaces.reverse(lat, lng);
@@ -172,7 +195,7 @@ window.App = (function () {
   }
 
   function applyData(data, keepUI) {
-    S.trip = data.trip; S.events = data.events.slice().sort(C.compareEvents); S.routes = data.routes || {};
+    S.trip = data.trip; S.events = data.events.slice().sort(C.compareEvents); S.routes = data.routes || {}; S.places = data.places || [];
     if (!keepUI) {
       const today = TPUtil.todayISO();
       S.selectedDay = (today >= S.trip.start_date && today <= S.trip.end_date) ? today : S.trip.start_date;
@@ -181,6 +204,7 @@ window.App = (function () {
     TPMap.setRoutes(S.routes);
     TPMap.setScheduled(scheduledSet());
     TPMap.setEventPins(S.events);
+    TPMap.setPlacePins(S.places);
     updateChrome();
     updateNotice();
     applyFilter();
@@ -201,9 +225,9 @@ window.App = (function () {
     if (!S.trip) return;
     try {
       const data = await TPData.loadAll();
-      const before = JSON.stringify([S.events, Object.keys(S.routes).length, S.trip.share_enabled, S.trip.share_can_edit, S.trip.can_edit]);
+      const before = JSON.stringify([S.events, S.places, Object.keys(S.routes).length, S.trip.share_enabled, S.trip.share_can_edit, S.trip.can_edit]);
       const sorted = data.events.slice().sort(C.compareEvents);
-      const after = JSON.stringify([sorted, Object.keys(data.routes || {}).length, data.trip.share_enabled, data.trip.share_can_edit, data.trip.can_edit]);
+      const after = JSON.stringify([sorted, data.places || [], Object.keys(data.routes || {}).length, data.trip.share_enabled, data.trip.share_can_edit, data.trip.can_edit]);
       if (before !== after) { applyData(data, true); if (!silent) toast('최신 내용으로 갱신했어요'); }
       else if (!silent) toast('이미 최신이에요');
     } catch (err) {
@@ -238,5 +262,5 @@ window.App = (function () {
   }
 
   document.addEventListener('DOMContentLoaded', boot);
-  return { boot, showView, showCourse, showPin, afterEventsChanged, updateNotice, refresh };
+  return { boot, showView, showCourse, showPin, markPlace, unmarkPlace, afterEventsChanged, updateNotice, refresh };
 })();

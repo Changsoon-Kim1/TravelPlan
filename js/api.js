@@ -87,6 +87,9 @@
       created_by: e.created_by || 'owner'
     };
   }
+  function normPlace(p) {
+    return { id: p.id, name: p.name, addr: p.addr || '', lat: Number(p.lat), lng: Number(p.lng), created_by: p.created_by || 'owner' };
+  }
   function eventPayload(ev) {
     return {
       day: ev.day, end_day: ev.end_day || null,
@@ -148,7 +151,7 @@
         if (!bundle) { throw new ApiError('invalid_token', 400); }
         const routes = (await rpc('shared_routes', { p_token: shareToken })) || {};
         trip = Object.assign({}, bundle.trip);
-        return { trip, events: (bundle.events || []).map(normEvent), routes };
+        return { trip, events: (bundle.events || []).map(normEvent), routes, places: (bundle.places || []).map(normPlace) };
       }
       if (mode !== 'owner') throw new ApiError('로그인이 필요합니다.', 401);
       let rows = await rest('trips?select=*&order=created_at.asc&limit=1');
@@ -165,13 +168,14 @@
         seeded = true;
       }
       trip = Object.assign({}, rows[0], { can_edit: true });
-      const [evs, rts] = await Promise.all([
+      const [evs, rts, pls] = await Promise.all([
         rest('trip_events?trip_id=eq.' + trip.id + '&select=*&order=day.asc&limit=1000'),
-        rest('course_routes?trip_id=eq.' + trip.id + '&select=course_id,path')
+        rest('course_routes?trip_id=eq.' + trip.id + '&select=course_id,path'),
+        rest('trip_places?trip_id=eq.' + trip.id + '&select=*&order=created_at.asc&limit=500')
       ]);
       const routes = {};
       rts.forEach((r) => { routes[r.course_id] = r.path; });
-      return { trip, events: evs.map(normEvent), routes, seeded };
+      return { trip, events: evs.map(normEvent), routes, places: pls.map(normPlace), seeded };
     },
 
     async saveEvent(ev) {
@@ -187,6 +191,16 @@
       }
       const rows = await rest('trip_events', { method: 'POST', headers: { Prefer: 'return=representation' }, body: Object.assign({ trip_id: trip.id }, payload) });
       return normEvent(rows[0]);
+    },
+    async savePlace(pl) {
+      const body = { name: pl.name, addr: pl.addr || null, lat: pl.lat, lng: pl.lng };
+      if (mode === 'guest') return normPlace(await rpc('shared_place_save', { p_token: shareToken, p_place: body }));
+      const rows = await rest('trip_places', { method: 'POST', headers: { Prefer: 'return=representation' }, body: Object.assign({ trip_id: trip.id }, body) });
+      return normPlace(rows[0]);
+    },
+    async deletePlace(id) {
+      if (mode === 'guest') { await rpc('shared_place_delete', { p_token: shareToken, p_id: id }); return; }
+      await rest('trip_places?id=eq.' + encodeURIComponent(id), { method: 'DELETE' });
     },
     async deleteEvent(id) {
       if (mode === 'guest') { await rpc('shared_event_delete', { p_token: shareToken, p_id: id }); return; }

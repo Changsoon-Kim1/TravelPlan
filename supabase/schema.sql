@@ -204,3 +204,71 @@ begin
   end if;
   return to_jsonb(r) - 'trip_id';
 end $$;
+
+-- ============================================================
+-- 추가 마이그레이션 trip_places: 관심 장소(날짜 없이 지도에 ⭐ 표시)
+-- shared_bundle 은 아래 버전으로 교체(places 포함)
+-- ============================================================
+create table public.trip_places (
+  id uuid primary key default gen_random_uuid(),
+  trip_id uuid not null references public.trips(id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 200),
+  addr text check (addr is null or char_length(addr) <= 300),
+  lat double precision not null check (lat between -90 and 90),
+  lng double precision not null check (lng between -180 and 180),
+  created_by text not null default 'owner',
+  created_at timestamptz not null default now()
+);
+create index trip_places_trip_idx on public.trip_places (trip_id);
+alter table public.trip_places enable row level security;
+create policy "owner all" on public.trip_places for all to authenticated
+  using (exists (select 1 from public.trips t where t.id = trip_places.trip_id and t.owner_id = (select auth.uid())))
+  with check (exists (select 1 from public.trips t where t.id = trip_places.trip_id and t.owner_id = (select auth.uid())));
+revoke all on public.trip_places from anon;
+grant select, insert, update, delete on public.trip_places to authenticated;
+
+create or replace function public.shared_bundle(p_token text) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare t public.trips;
+begin
+  select * into t from private.trip_for_token(p_token);
+  if t.id is null then return null; end if;
+  return jsonb_build_object(
+    'trip', jsonb_build_object('id', t.id, 'title', t.title, 'start_date', t.start_date,
+                               'end_date', t.end_date, 'can_edit', t.share_can_edit),
+    'events', coalesce((select jsonb_agg(to_jsonb(e) - 'trip_id' order by e.day, e.start_time nulls first)
+                        from public.trip_events e where e.trip_id = t.id), '[]'::jsonb),
+    'places', coalesce((select jsonb_agg(to_jsonb(p) - 'trip_id' order by p.created_at)
+                        from public.trip_places p where p.trip_id = t.id), '[]'::jsonb));
+end $$;
+
+create or replace function public.shared_place_save(p_token text, p_place jsonb) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare t public.trips; r public.trip_places;
+begin
+  select * into t from private.trip_for_token(p_token);
+  if t.id is null then raise exception 'invalid_token' using errcode = '28000'; end if;
+  if not t.share_can_edit then raise exception 'read_only' using errcode = '42501'; end if;
+  if (select count(*) from public.trip_places where trip_id = t.id) >= 300 then
+    raise exception 'too_many_events' using errcode = '54000';
+  end if;
+  insert into public.trip_places (trip_id, name, addr, lat, lng, created_by)
+  values (t.id, p_place->>'name', nullif(p_place->>'addr', ''), (p_place->>'lat')::double precision,
+          (p_place->>'lng')::double precision, 'guest')
+  returning * into r;
+  return to_jsonb(r) - 'trip_id';
+end $$;
+
+create or replace function public.shared_place_delete(p_token text, p_id uuid) returns boolean
+language plpgsql security definer set search_path = '' as $$
+declare t public.trips;
+begin
+  select * into t from private.trip_for_token(p_token);
+  if t.id is null then raise exception 'invalid_token' using errcode = '28000'; end if;
+  if not t.share_can_edit then raise exception 'read_only' using errcode = '42501'; end if;
+  delete from public.trip_places where id = p_id and trip_id = t.id;
+  return found;
+end $$;
+
+revoke all on function public.shared_place_save(text, jsonb), public.shared_place_delete(text, uuid) from public;
+grant execute on function public.shared_place_save(text, jsonb), public.shared_place_delete(text, uuid) to anon, authenticated;
