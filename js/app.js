@@ -11,7 +11,12 @@ window.App = (function () {
   const C = TPCore;
   let chromeReady = false, pollTimer = null;
 
-  const scheduledSet = () => new Set(S.events.filter((e) => e.course_id).map((e) => e.course_id));
+  // 코스 id → 그 코스의 일정 목록(빠른 날짜순). Map이지만 .has(id)로 집합처럼도 쓴다.
+  const scheduledSet = () => {
+    const m = new Map();
+    S.events.slice().sort(C.compareEvents).forEach((e) => { if (e.course_id) { if (!m.has(e.course_id)) m.set(e.course_id, []); m.get(e.course_id).push(e); } });
+    return m;
+  };
   const FILTERS = [
     { id: 'all', label: '전체', fn: () => true },
     { id: 'spring', label: '🌸 4월 유채·청보리', fn: (c) => window.OLLE_SPRING_IDS.includes(c.id) },

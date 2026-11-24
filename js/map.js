@@ -21,25 +21,36 @@
   function labelText(c) {
     return c.id.replace(/^0/, '') + (window.OLLE_SPRING_IDS.includes(c.id) ? '🌸' : '');
   }
+  // 내 일정에 든 코스는 굵고 진하게, 아닌 코스는 가늘고 연하게 (선택하면 둘 다 잠시 강조)
   function lineStyle(c, exact) {
     const sel = selectedId === c.id, sch = scheduled.has(c.id);
-    return {
-      color: colors[c.id], weight: sel ? 6 : (sch ? 5 : 4), opacity: sel ? 1 : 0.92,
-      dashArray: exact ? null : '9 9', lineCap: 'round', lineJoin: 'round'
-    };
+    const weight = sch ? (sel ? 9 : 7) : (sel ? 5 : 3);
+    const opacity = (sch || sel) ? 1 : 0.5;
+    return { color: colors[c.id], weight, opacity, dashArray: exact ? null : (sch ? '12 8' : '8 8'), lineCap: 'round', lineJoin: 'round' };
   }
-  // 선 아래에 깔리는 흰 테두리: 지도 위에서 선이 또렷하고 깔끔해 보이게 한다
+  // 선 아래에 깔리는 흰 테두리: 일정 코스는 두껍게, 나머지는 얇고 연하게
   function casingStyle(c) {
-    const sel = selectedId === c.id;
-    return { color: '#fff', weight: sel ? 10 : 7, opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false };
+    const sel = selectedId === c.id, sch = scheduled.has(c.id);
+    const weight = sch ? (sel ? 13 : 11) : (sel ? 8 : 5);
+    return { color: '#fff', weight, opacity: (sch || sel) ? 0.95 : 0.45, lineCap: 'round', lineJoin: 'round', interactive: false };
+  }
+  // 일정 코스 꼬리표: "4/12(월) 10:00~15:00" (같은 코스를 여러 번 잡았으면 가장 이른 일정 + 건수)
+  function scheduleTag(c) {
+    const list = scheduled.get ? scheduled.get(c.id) : null;
+    if (!list || !list.length) return '';
+    const ev = list[0];
+    let t = TPUtil.fmtDay(ev.day) + ' ' + TPUtil.fmtTimeRange(ev);
+    if (list.length > 1) t += ' 외 ' + (list.length - 1);
+    return '<span class="course-tag">' + esc(t) + '</span>';
   }
   function badgeIcon(c) {
     const sel = selectedId === c.id, sch = scheduled.has(c.id);
     return L.divIcon({
       className: 'course-badge-wrap',
-      html: '<div class="course-badge' + (sel ? ' sel' : '') + (sch ? ' sch' : '') + '" style="background:' + colors[c.id] + '">' +
-        esc(labelText(c)) + (sch ? '<i>✓</i>' : '') + '</div>',
-      iconSize: null
+      html: '<div class="course-badge' + (sel ? ' sel' : '') + (sch ? ' sch' : '') + '" style="background:' + colors[c.id] + ';color:#fff">' +
+        esc(labelText(c)) + (sch ? '<i>✓</i>' : '') + (sch ? scheduleTag(c).replace('<span', '<span style="color:' + colors[c.id] + ';border-color:' + colors[c.id] + '"') : '') + '</div>',
+      iconSize: null,
+      zIndexOffset: 0
     });
   }
 
@@ -63,7 +74,8 @@
     g.casing.setStyle(casingStyle(c));
     g.line.setStyle(lineStyle(c, g.exact));
     g.badge.setIcon(badgeIcon(c));
-    if (selectedId === id) { g.casing.bringToFront(); g.line.bringToFront(); }
+    if (selectedId === id || scheduled.has(id)) { g.casing.bringToFront(); g.line.bringToFront(); }
+    g.badge.setZIndexOffset(scheduled.has(id) ? 500 : (selectedId === id ? 1000 : 0));
   }
 
   function addBaseLayers() {
