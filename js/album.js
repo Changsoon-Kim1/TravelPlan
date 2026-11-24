@@ -321,7 +321,7 @@
       let bgUrl = null, bg = null, bgCredit = '';
       if (pr && $('bg').checked) {
         prog.textContent = '배경 지도 받는 중…';
-        const kind = $('bgkind').value, detail = parseInt($('bgdetail').value, 10) || 0;
+        const kind = $('bgkind').value, detail = 0;
         try { bg = await basemap(pr, kind, detail); } catch (e) { bg = null; }
         if (!bg && kind !== 'osm') { // 지형 지도가 안 되면 일반 지도로 한 번 더
           prog.textContent = '지형 지도를 못 받아 일반 지도로 다시 시도해요…';
