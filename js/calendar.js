@@ -121,6 +121,7 @@
     }
     h += '<div class="seg"><button data-cmode="grid" class="' + (S.calMode === 'grid' ? 'on' : '') + '">달력</button>' +
       '<button data-cmode="list" class="' + (S.calMode === 'list' ? 'on' : '') + '">목록</button></div>' +
+      '<button class="btn" data-report="1">📄 리포트</button>' +
       (TPData.canEdit() ? '<button class="btn primary" data-add-day="' + (S.selectedDay || t.start_date) + '">+ 일정 추가</button>' : '') + '</div>';
     h += summaryHTML();
     h += S.calMode === 'grid' ? gridHTML() + (S.selectedDay ? dayHTML(S.selectedDay) : '<p class="muted">날짜를 누르면 그날 일정이 보여요.</p>') : listHTML();
@@ -136,6 +137,7 @@
       else if (d.mnav) { S.calMonth = shiftMonth(S.calMonth, Number(d.mnav)); render(); }
       else if (d.mjump) { S.calMonth = monthOf(d.mjump); S.selectedDay = d.mjump; render(); }
       else if (d.cmode) { S.calMode = d.cmode; render(); }
+      else if (d.report) { TPReport.open(); }
       else if (d.addDay) { TPDialogs.openEventModal({ defaults: { day: d.addDay } }); }
       else if (d.edit) { const ev = S.events.find((x) => x.id === d.edit); if (ev) TPDialogs.openEventModal({ event: ev }); }
       else if (d.del) { TPDialogs.deleteEvent(d.del); }
