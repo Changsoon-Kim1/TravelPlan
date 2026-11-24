@@ -24,9 +24,14 @@
   function lineStyle(c, exact) {
     const sel = selectedId === c.id, sch = scheduled.has(c.id);
     return {
-      color: colors[c.id], weight: sel ? 8 : (sch ? 6 : 5), opacity: sel ? 1 : 0.85,
+      color: colors[c.id], weight: sel ? 6 : (sch ? 5 : 4), opacity: sel ? 1 : 0.92,
       dashArray: exact ? null : '9 9', lineCap: 'round', lineJoin: 'round'
     };
+  }
+  // 선 아래에 깔리는 흰 테두리: 지도 위에서 선이 또렷하고 깔끔해 보이게 한다
+  function casingStyle(c) {
+    const sel = selectedId === c.id;
+    return { color: '#fff', weight: sel ? 10 : 7, opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false };
   }
   function badgeIcon(c) {
     const sel = selectedId === c.id, sch = scheduled.has(c.id);
@@ -43,20 +48,22 @@
     const { path, exact } = pathFor(c);
     const pick = () => onSelect(c.id);
     const hit = L.polyline(path, { color: '#000', weight: 22, opacity: 0, bubblingMouseEvents: false }).on('click', pick);
+    const casing = L.polyline(path, casingStyle(c)).on('click', pick);
     const line = L.polyline(path, lineStyle(c, exact)).on('click', pick);
     const mid = path[Math.floor((path.length - 1) / 2)];
     const badge = L.marker(mid, { icon: badgeIcon(c), keyboard: false, riseOnHover: true }).on('click', pick);
-    const group = L.layerGroup([hit, line, badge]);
-    groups[c.id] = { group, line, hit, badge, exact };
+    const group = L.layerGroup([hit, casing, line, badge]);
+    groups[c.id] = { group, line, casing, hit, badge, exact };
     if (filterFn(c)) group.addTo(map);
   }
 
   function restyle(id) {
     const g = groups[id], c = courseById[id];
     if (!g || !c) return;
+    g.casing.setStyle(casingStyle(c));
     g.line.setStyle(lineStyle(c, g.exact));
     g.badge.setIcon(badgeIcon(c));
-    if (selectedId === id) g.line.bringToFront();
+    if (selectedId === id) { g.casing.bringToFront(); g.line.bringToFront(); }
   }
 
   function addBaseLayers() {
