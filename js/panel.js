@@ -58,15 +58,15 @@
 
     h += scheduleHTML(c);
 
-    h += '<section><h3>👀 구경거리</h3><div class="chips">' +
-      c.highlights.map((x) => '<span class="chip">#' + esc(x) + '</span>').join('') + '</div>' +
+    h += '<section><h3>👀 구경거리 <small class="muted">(누르면 앱 지도에서 검색)</small></h3><div class="chips">' +
+      c.highlights.map((x) => findBtn(x, '#' + x + ' 🔍', 'chip find')).join('') + '</div>' +
       '<p>' + esc(c.features) + '</p>' +
-      '<div class="wps"><b>경유지</b> ' + c.waypoints.map(esc).join(' → ') + '</div></section>';
+      '<div class="wps"><b>경유지</b> ' + c.waypoints.map((w) => findBtn(w, w + ' 🔍', 'wp find')).join(' → ') + '</div></section>';
 
     h += '<section><h3>🍽️ 맛집 · 카페</h3><ul class="rest-list">' + c.restaurants.map((r) =>
       '<li><div><b>' + esc(r.name) + '</b> <span class="menu">' + esc(r.menu) + '</span>' +
       '<div class="muted sm">📍 ' + esc(r.spot) + '</div></div>' +
-      '<div class="rest-links">' + ext(links.naverMap('제주 ' + r.name), '네이버') + ext(links.kakaoMap('제주 ' + r.name), '카카오') + '</div></li>').join('') + '</ul></section>';
+      '<div class="rest-links">' + findBtn(r.name, '🔍 지도 검색', 'find-main') + ext(links.naverMap('제주 ' + r.name), '네이버') + ext(links.kakaoMap('제주 ' + r.name), '카카오') + '</div></li>').join('') + '</ul></section>';
 
     h += '<section><h3>📷 사진 보기</h3>' +
       '<p class="muted sm">저작권 때문에 앱에 사진을 직접 넣지 않고, 검색 링크로 연결해요.</p>' +
@@ -91,9 +91,19 @@
     return h;
   }
 
+  // 앱 지도에서 이름으로 검색하는 버튼 (괄호 안 설명은 빼고 검색)
+  function findBtn(name, label, cls) {
+    const q = String(name).replace(/\(.*?\)/g, '').trim();
+    return '<button type="button" class="' + cls + '" data-find="' + esc(q) + '">' + esc(label) + '</button>';
+  }
+
   function bind(c) {
     const panel = $('#panel');
     $('#panelClose', panel).addEventListener('click', () => TPPanel.close());
+    panel.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-find]');
+      if (b) App.findOnMap(b.dataset.find);
+    });
     wireSchedule(c);
   }
   function wireSchedule(c) {

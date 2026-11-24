@@ -136,6 +136,15 @@ window.App = (function () {
     });
     q.addEventListener('input', () => { if (!q.value) { hide(); TPMap.clearFound(); } });
   }
+  // 코스 상세의 식당·구경거리 등을 앱 지도에서 검색 (패널을 닫고 검색창에 채워 실행)
+  function findOnMap(query) {
+    showView('map');
+    TPPanel.close && TPPanel.close();
+    const q = $('#placeQ');
+    q.value = query;
+    setTimeout(() => $('#placeForm').requestSubmit(), 60);
+  }
+
   // 관심 장소로 지도에 ⭐ 표시 (날짜 없음)
   async function markPlace(p) {
     if (!TPData.canEdit()) { toast('읽기 전용 링크라서 수정할 수 없어요', 'err'); return; }
@@ -262,5 +271,5 @@ window.App = (function () {
   }
 
   document.addEventListener('DOMContentLoaded', boot);
-  return { boot, showView, showCourse, showPin, markPlace, unmarkPlace, afterEventsChanged, updateNotice, refresh };
+  return { boot, showView, showCourse, showPin, findOnMap, markPlace, unmarkPlace, afterEventsChanged, updateNotice, refresh };
 })();

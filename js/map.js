@@ -83,15 +83,23 @@
   }
 
   const KIND = TPUtil.KIND;
+  // 네이버 지도에서 이 장소 열기 (검색 링크; 휴대폰에선 네이버 지도 앱으로 이어질 수 있음)
+  function naverLink(name) {
+    const q = String(name || '').trim();
+    if (!q) return '';
+    return '<a class="btn small naver" target="_blank" rel="noopener" href="' + esc(TPUtil.links.naverMap(/제주/.test(q) ? q : '제주 ' + q)) + '">🗺 네이버 지도</a>';
+  }
   function pinPopupHtml(e) {
     const canEdit = TPData.canEdit();
     return '<div class="pin-pop"><b>' + esc((KIND[e.kind] || KIND.other).icon + ' ' + e.title) + '</b>' +
       '<div class="muted sm">' + esc(TPUtil.fmtDay(e.day) + (e.end_day && e.end_day !== e.day ? '~' + TPUtil.fmtDay(e.end_day) : '') + ' ' + (e.end_day && e.end_day !== e.day ? '' : TPUtil.fmtTimeRange(e))) + '</div>' +
       (e.place && e.place !== e.title ? '<div class="muted sm">📍 ' + esc(e.place) + '</div>' : '') +
+      '<div class="pin-act">' + naverLink(e.place || e.title) + '</div>' +
       (canEdit ? '<div class="pin-act"><button class="btn small" data-pin-edit="' + esc(e.id) + '">수정</button><button class="btn small danger" data-pin-del="' + esc(e.id) + '">삭제</button></div>' : '') + '</div>';
   }
   function placePopupHtml(pl) {
     return '<div class="pin-pop"><b>⭐ ' + esc(pl.name) + '</b>' + (pl.addr ? '<div class="muted sm">' + esc(pl.addr) + '</div>' : '') +
+      '<div class="pin-act">' + naverLink(pl.name) + '</div>' +
       (TPData.canEdit() ? '<div class="pin-act"><button class="btn small primary" data-place-add="' + esc(pl.id) + '">📅 일정에 추가</button>' +
         '<button class="btn small danger" data-place-del="' + esc(pl.id) + '">표시 해제</button></div>' : '') + '</div>';
   }
@@ -99,6 +107,7 @@
   function foundPopupHtml(p) {
     foundPlace = p;
     return '<div class="pin-pop"><b>' + esc(p.name) + '</b>' + (p.addr ? '<div class="muted sm">' + esc(p.addr) + '</div>' : '') +
+      '<div class="pin-act">' + naverLink(p.name) + '</div>' +
       (TPData.canEdit() ? '<div class="pin-act"><button class="btn small" data-found-mark="1">⭐ 지도에 표시</button><button class="btn small primary" data-found-add="1">📅 일정에 추가</button></div>' : '') + '</div>';
   }
 
