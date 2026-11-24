@@ -202,7 +202,36 @@
     return out;
   }
 
+  // ---------- 장소 검색어 만들기 ----------
+  // 식당·구경거리 이름이 "제주해녀박물관 인근 식당"처럼 설명이면 그대로는 검색이 안 되므로,
+  // 앞에서부터 후보를 만든다: 원래 이름 → 설명어(인근·식당가 등) 앞의 장소 → 단어를 하나씩 줄인 것 → 위치 설명(spot)
+  const GENERIC = /(인근|일대|주변|근처|식당가|카페거리|먹거리|향토|로컬|오션뷰|브런치|해산물)/;
+  function searchTerms(name, spot) {
+    const out = [];
+    const add = (t) => {
+      t = (t || '').replace(/\s+/g, ' ').trim();
+      if (t.length >= 2 && !out.includes(t)) out.push(t);
+    };
+    const base = String(name || '').replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim();
+    const p1 = base.split(/\s*\/\s*/)[0].split(/\s+등(?:\s|$)/)[0].trim();
+    const m = GENERIC.exec(p1);
+    if (!m) add(p1);
+    else {
+      const before = p1.slice(0, m.index).trim();
+      add(before);
+      add(before.split(/[·\s]/)[0]);
+    }
+    const toks = (m ? p1.slice(0, m.index).trim() : p1).split(/\s+/);
+    for (let n = toks.length - 1; n >= 1; n--) add(toks.slice(0, n).join(' '));
+    add(toks[0]);
+    base.split(/\s*\/\s*/).slice(1).forEach((seg) => add(seg.split(/\s+등(?:\s|$)/)[0]));
+    const sp = String(spot || '').replace(/^(시점|종점|중간|초반|후반)\s*/, '').replace(/\s*(인근|일대|경유지|구간)$/, '').trim();
+    if (sp.length >= 3 && !/^(해안|시내|경유지)/.test(sp)) add(sp);
+    return out;
+  }
+
   const api = {
+    searchTerms,
     PALETTE, mainNum, areAdjacent, assignColors,
     pad2, toMin, fromMin, normTime, parseISO, toISO, addDays, weekday, dateRange, daysInMonth, defaultEnd,
     eventCoversDay, compareEvents, findOverlaps,

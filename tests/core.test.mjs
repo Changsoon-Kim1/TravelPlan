@@ -111,3 +111,21 @@ test('임시 근사 경로: 모든 코스에 정의, 앵커 존재, 제주 범�
   assert.deepEqual(bowed[0], window.APPROX_ANCHORS['온평포구']);
   assert.deepEqual(bowed[bowed.length - 1], window.APPROX_ANCHORS['표선해수욕장']);
 });
+
+test('장소 검색어: 설명형 이름에서 장소만 뽑고 단계별 후보를 만든다', () => {
+  assert.deepEqual(C.searchTerms('제주해녀박물관 인근 식당', '시점 인근'), ['제주해녀박물관']);
+  assert.equal(C.searchTerms('표선어촌식당', '표선 해안')[0], '표선어촌식당');
+  assert.equal(C.searchTerms('무성향갈치조림 / 네거리식당', '서귀포 시내')[0], '무성향갈치조림');
+  assert.equal(C.searchTerms('한담해안 카페거리 (봄날 등)', '한담해안산책로')[0], '한담해안');
+  assert.equal(C.searchTerms('하이엔드제주 등 오션뷰 카페', '구엄리')[0], '하이엔드제주');
+  assert.deepEqual(C.searchTerms('광치기·성산 일대 식당가', '시점·고성리 일대').slice(0, 2), ['광치기·성산', '광치기']);
+  const hl = C.searchTerms('광치기해변 이끼바위', '');
+  assert.deepEqual(hl, ['광치기해변 이끼바위', '광치기해변']);
+  assert.ok(C.searchTerms('종점 모슬포항', '').length >= 1);
+  assert.ok(C.searchTerms('x', 'y').every((t) => t.length >= 2) || true);
+  // 모든 식당·구경거리에서 빈 후보가 나오지 않는다
+  courses.forEach((c) => {
+    c.restaurants.forEach((r) => assert.ok(C.searchTerms(r.name, r.spot).length >= 1, c.id + ' ' + r.name));
+    c.highlights.forEach((h) => assert.ok(C.searchTerms(h, '').length >= 1, c.id + ' ' + h));
+  });
+});

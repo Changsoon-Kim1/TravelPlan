@@ -109,22 +109,38 @@ window.App = (function () {
   function showPin(id) { showView('map'); TPPanel.close && TPPanel.close(); setTimeout(() => TPMap.showPin(id), 60); }
 
   // ---------- 장소 검색 ----------
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let results = [];
+  // 후보 검색어를 차례로 시도해 처음 결과가 나온 것으로 보여 준다 (무료 서버 규칙상 시도 사이에 1초 이상 쉰다)
+  async function runSearch(terms) {
+    const q = $('#placeQ'), list = $('#placeResults'), go = $('#placeGo');
+    go.disabled = true; go.textContent = '…';
+    try {
+      let used = terms[0];
+      results = [];
+      for (let i = 0; i < Math.min(terms.length, 4); i++) {
+        if (i > 0) await sleep(1100);
+        used = terms[i];
+        results = await TPPlaces.search(used);
+        if (results.length) break;
+      }
+      let note = '';
+      if (results.length && used !== terms[0]) { q.value = used; note = '<li class="note">“' + esc(terms[0]) + '” 결과가 없어 “' + esc(used) + '”(으)로 찾았어요</li>'; }
+      if (!results.length) list.innerHTML = '<li class="none">검색 결과가 없어요. 이름을 줄이거나 지도를 길게 눌러 위치를 직접 고를 수 있어요.</li>';
+      else list.innerHTML = note + results.map((r, i) => '<li><button type="button" data-i="' + i + '"><b>' + esc(r.name) + '</b><small>' + esc(r.addr) + '</small></button></li>').join('');
+      list.hidden = false;
+    } catch (err) { TPUtil.toast(err.message || '검색하지 못했어요', 'err'); }
+    go.disabled = false; go.textContent = '검색';
+  }
+
   function setupPlaceSearch() {
-    const form = $('#placeForm'), q = $('#placeQ'), list = $('#placeResults'), go = $('#placeGo');
+    const form = $('#placeForm'), q = $('#placeQ'), list = $('#placeResults');
     const hide = () => { list.hidden = true; list.innerHTML = ''; };
-    let results = [];
-    form.addEventListener('submit', async (e) => {
+    form.addEventListener('submit', (e) => {
       e.preventDefault();
       const text = q.value.trim();
       if (!text) { hide(); TPMap.clearFound(); return; }
-      go.disabled = true; go.textContent = '…';
-      try {
-        results = await TPPlaces.search(text);
-        if (!results.length) { list.innerHTML = '<li class="none">검색 결과가 없어요. 이름을 줄이거나 지도를 길게 눌러 위치를 직접 고를 수 있어요.</li>'; }
-        else list.innerHTML = results.map((r, i) => '<li><button type="button" data-i="' + i + '"><b>' + esc(r.name) + '</b><small>' + esc(r.addr) + '</small></button></li>').join('');
-        list.hidden = false;
-      } catch (err) { TPUtil.toast(err.message || '검색하지 못했어요', 'err'); }
-      go.disabled = false; go.textContent = '검색';
+      runSearch([text]);
     });
     list.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-i]');
@@ -136,13 +152,14 @@ window.App = (function () {
     });
     q.addEventListener('input', () => { if (!q.value) { hide(); TPMap.clearFound(); } });
   }
-  // 코스 상세의 식당·구경거리 등을 앱 지도에서 검색 (패널을 닫고 검색창에 채워 실행)
-  function findOnMap(query) {
+  // 코스 상세의 식당·구경거리 → 앱 지도에서 검색 (패널을 닫고 검색창에 채워 실행). terms: 검색어 후보 목록
+  function findOnMap(terms) {
+    terms = Array.isArray(terms) ? terms : [terms];
     showView('map');
     TPPanel.close && TPPanel.close();
-    const q = $('#placeQ');
-    q.value = query;
-    setTimeout(() => $('#placeForm').requestSubmit(), 60);
+    $('#placeQ').value = terms[0];
+    $('#placeResults').hidden = true;
+    runSearch(terms);
   }
 
   // 관심 장소로 지도에 ⭐ 표시 (날짜 없음)

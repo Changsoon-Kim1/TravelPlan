@@ -79,7 +79,7 @@
     g.line.setStyle(lineStyle(c, g.exact));
     g.badge.setIcon(badgeIcon(c));
     if (selectedId === id || scheduled.has(id)) { g.casing.bringToFront(); g.line.bringToFront(); }
-    g.badge.setZIndexOffset(scheduled.has(id) ? 500 : (selectedId === id ? 1000 : 0));
+    g.badge.setZIndexOffset(scheduled.has(id) ? 800 : (selectedId === id ? 1000 : 0));
   }
 
   const KIND = TPUtil.KIND;
@@ -207,7 +207,7 @@
           html: '<div class="pin"><span class="pin-dot">' + k.icon + '</span><span class="pin-tag">' + esc(TPUtil.fmtPinTag(e)) + '</span></div>',
           iconSize: null
         });
-        const m = L.marker([e.lat, e.lng], { icon, riseOnHover: true, zIndexOffset: 600 });
+        const m = L.marker([e.lat, e.lng], { icon, riseOnHover: true, zIndexOffset: 450 });
         m.bindPopup(() => pinPopupHtml(e), { closeButton: true, minWidth: 190 });
         m.addTo(pinLayer);
         pinMarkers[e.id] = m;
@@ -231,7 +231,7 @@
           html: '<div class="pin fav"><span class="pin-dot">⭐</span><span class="pin-tag">' + esc(pl.name) + '</span></div>',
           iconSize: null
         });
-        const m = L.marker([pl.lat, pl.lng], { icon, riseOnHover: true, zIndexOffset: 550 });
+        const m = L.marker([pl.lat, pl.lng], { icon, riseOnHover: true, zIndexOffset: 400 });
         m.bindPopup(() => placePopupHtml(pl), { closeButton: true, minWidth: 190 });
         m.addTo(favLayer);
         favMarkers[pl.id] = m;
