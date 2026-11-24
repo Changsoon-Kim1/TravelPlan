@@ -129,7 +129,8 @@
       if (!ev.day) return showErr('날짜를 선택해 주세요.');
       if (ev.end_day && ev.end_day < ev.day) return showErr('마지막 날이 시작 날짜보다 빠릅니다.');
       if (!allDayNow && !ev.start_time) return showErr('시작 시간을 입력하거나 "하루 종일"을 선택해 주세요.');
-      if (ev.start_time && ev.end_time && C.toMin(ev.end_time) <= C.toMin(ev.start_time)) return showErr('종료 시간이 시작 시간보다 늦어야 해요.');
+      const multiDay = ev.end_day && ev.end_day > ev.day; // 여러 날이면 시작은 첫날, 종료는 마지막 날 시각이라 역전 가능
+      if (!multiDay && ev.start_time && ev.end_time && C.toMin(ev.end_time) <= C.toMin(ev.start_time)) return showErr('종료 시간이 시작 시간보다 늦어야 해요.');
       const clash = C.findOverlaps(ev, S.events, ev.id);
       if (clash.length && !confirm('같은 시간대에 이미 일정이 있어요:\n' + clash.map((x) => '· ' + x.title + ' (' + (x.start_time || '') + (x.end_time ? '~' + x.end_time : '') + ')').join('\n') + '\n\n그래도 저장할까요?')) return;
       showErr('');
