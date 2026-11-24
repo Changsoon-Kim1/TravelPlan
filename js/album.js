@@ -126,45 +126,51 @@
     return pts.length ? makeProj(pts, 640, 240, 560) : null;
   }
 
-  // ---- 배경 지도: OpenStreetMap 타일을 이어 붙여 한 장의 그림으로 (저장한 PDF/HTML에도 그대로 들어가게) ----
-  const TILE_HOSTS = ['https://tile.openstreetmap.org', 'https://tile.openstreetmap.de'];
-  function loadTile(z, x, y) {
+  // ---- 배경 지도: 타일을 이어 붙여 한 장의 그림으로 (저장한 PDF/HTML에도 그대로 들어가게) ----
+  const TILES = {
+    osm: { hosts: ['https://tile.openstreetmap.org', 'https://tile.openstreetmap.de'], url: (h, z, x, y) => h + '/' + z + '/' + x + '/' + y + '.png', maxZ: 17, credit: '© OpenStreetMap contributors' },
+    topo: { hosts: ['https://a.tile.opentopomap.org', 'https://b.tile.opentopomap.org', 'https://c.tile.opentopomap.org'], url: (h, z, x, y) => h + '/' + z + '/' + x + '/' + y + '.png', maxZ: 17, credit: '© OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)' }
+  };
+  function loadTile(kind, z, x, y) {
+    const T = TILES[kind];
     const tryHost = (i) => new Promise((resolve) => {
-      if (i >= TILE_HOSTS.length) return resolve(null);
+      if (i >= T.hosts.length) return resolve(null);
       const img = new Image(); img.crossOrigin = 'anonymous';
       const timer = setTimeout(() => { img.src = ''; resolve(tryHost(i + 1)); }, 9000);
       img.onload = () => { clearTimeout(timer); resolve(img); };
       img.onerror = () => { clearTimeout(timer); resolve(tryHost(i + 1)); };
-      img.src = TILE_HOSTS[i] + '/' + z + '/' + x + '/' + y + '.png';
+      img.src = T.url(T.hosts[i], z, x, y);
     });
     return tryHost(0);
   }
-  async function basemap(pr) {
-    const f = 2, cv = document.createElement('canvas');
-    cv.width = pr.W * f; cv.height = pr.H * f;
+  // 지도 글자가 읽히려면 타일 1칸이 화면에서 대략 200~300px 이어야 한다(타일 원본은 256px).
+  // 화면 폭 ≈ 345px 에 viewBox 640 을 그리므로 타일 1칸 ≈ 430 viewBox 단위가 되는 확대 수준(z)을 고른다. detail: -1 넓게, 0 보통, +1 자세히
+  async function basemap(pr, kind, detail) {
+    const T = TILES[kind], f = 1.5, cv = document.createElement('canvas');
+    cv.width = Math.round(pr.W * f); cv.height = Math.round(pr.H * f);
     const g = cv.getContext('2d'); g.fillStyle = '#eef2f1'; g.fillRect(0, 0, cv.width, cv.height);
-    let z = Math.max(8, Math.min(17, Math.ceil(Math.log2(pr.sc * f / 256))));
+    let z = Math.max(6, Math.min(T.maxZ, Math.round(Math.log2(pr.sc / 430)) + (detail || 0)));
     const range = (zz) => { const n = 2 ** zz; return { n, x0: Math.max(0, Math.floor(pr.wx0 * n)), x1: Math.min(n - 1, Math.floor(pr.wx1 * n)), y0: Math.max(0, Math.floor(pr.wy0 * n)), y1: Math.min(n - 1, Math.floor(pr.wy1 * n)) }; };
     let r = range(z);
-    while ((r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1) > 30 && z > 8) { z--; r = range(z); }
+    while ((r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1) > 40 && z > 6) { z--; r = range(z); }
     const jobs = [];
     for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) jobs.push({ x, y });
     let ok = 0;
     await Promise.all(jobs.map(async (t) => {
-      const img = await loadTile(z, t.x, t.y);
+      const img = await loadTile(kind, z, t.x, t.y);
       if (!img) return;
       ok++;
       const x0 = pr.fx(t.x / r.n) * f, y0 = pr.fy(t.y / r.n) * f, x1 = pr.fx((t.x + 1) / r.n) * f, y1 = pr.fy((t.y + 1) / r.n) * f;
       g.drawImage(img, x0, y0, x1 - x0 + 0.6, y1 - y0 + 0.6);
     }));
     if (!ok) return null;
-    return cv.toDataURL('image/jpeg', 0.85); // 캔버스가 오염되면(타일 서버가 허용 안 함) 여기서 예외 → 호출 쪽에서 처리
+    return { url: cv.toDataURL('image/jpeg', 0.88), credit: T.credit, z }; // 타일 서버가 허용하지 않으면 여기서 예외
   }
   const bgUse = (pr) => '<use href="#bgmap" x="0" y="0"/>';
 
   const stayRing = (pr, c, r) => c.stay ? '<circle cx="' + pr.X(c.loc.lon) + '" cy="' + pr.Y(c.loc.lat) + '" r="' + r + '" fill="#ea580c" fill-opacity=".14" stroke="#ea580c" stroke-width="2" stroke-dasharray="5 4"/>' : '';
   // 전체 지도: 배경 지도 + 걸은 길 + 장면 번호(머문 곳은 점선 원)
-  function mapSVG(track, chapters, pr, hasBg) {
+  function mapSVG(track, chapters, pr, hasBg, credit) {
     if (!pr) return '';
     let h = '<svg class="map" viewBox="0 0 ' + pr.W + ' ' + pr.H + '" role="img" aria-label="걸은 길과 장면 위치(북쪽이 위)">' + (hasBg ? bgUse(pr) : '');
     if (track) {
@@ -176,7 +182,7 @@
         '<circle cx="' + pr.X(e.lon) + '" cy="' + pr.Y(e.lat) + '" r="7" fill="#dc2626" stroke="#fff" stroke-width="2.5"/>';
     }
     chapters.forEach((c) => { if (c.loc) h += stayRing(pr, c, 19) + badge(pr.X(c.loc.lon), pr.Y(c.loc.lat), 11, c.n); });
-    if (hasBg) h += '<text x="' + (pr.W - 6) + '" y="' + (pr.H - 6) + '" font-size="10" text-anchor="end" fill="#334155" stroke="#fff" stroke-width="3" paint-order="stroke">© OpenStreetMap contributors</text>';
+    if (hasBg) h += '<text x="' + (pr.W - 6) + '" y="' + (pr.H - 6) + '" font-size="10" text-anchor="end" fill="#334155" stroke="#fff" stroke-width="3" paint-order="stroke">' + esc(credit || '© OpenStreetMap contributors') + '</text>';
     return h + '</svg>';
   }
   // 장면별 작은 지도: 전체 지도를 이 장면 주변으로 잘라서 보여 준다. 지금까지 걸은 길은 진하게, 앞으로 갈 길은 연하게.
@@ -254,7 +260,7 @@
       '<div class="shots ' + (c.photos.length === 1 ? 'n1' : 'nm') + '">' + imgs + '</div></section>';
   }
 
-  function buildReport(title, track, photos, pr, bgUrl) {
+  function buildReport(title, track, photos, pr, bgUrl, bgCredit) {
     const stats = track ? C.trackStats(track) : null;
     photos.forEach((p) => { p._trackStart = track ? track[0].t : 0; });
     const stays = track ? C.findStays(track, 60, 300) : [];
@@ -272,7 +278,7 @@
         '<div><small>누적 오르막</small><b>' + Math.round(stats.up) + 'm</b><small>내리막 ' + Math.round(stats.down) + 'm</small></div>' +
         '<div><small>고도</small><b>' + (stats.max != null ? Math.round(stats.max) + 'm' : '–') + '</b><small>최저 ' + (stats.min != null ? Math.round(stats.min) + 'm' : '–') + '</small></div></div></section>';
     }
-    const m = mapSVG(track, chapters, pr, !!bgUrl);
+    const m = mapSVG(track, chapters, pr, !!bgUrl, bgCredit);
     if (m) h += '<section class="rp-sec">' + m + '<div class="muted sm">초록 시작 · 빨강 끝 · 주황 번호는 아래 이야기의 장면 번호 · 점선 원은 머문 곳</div></section>';
     const e = elevSVG(track, chapters, cum);
     if (e) h += '<section class="rp-sec">' + e + '</section>';
@@ -280,7 +286,7 @@
     let prev = null;
     chapters.forEach((c) => { h += chapterHTML(c, prev, track, cum, chapters, pr, !!bgUrl); if (c.idx != null) prev = c; });
     h += '</section><div class="foot">이 리포트는 이 기기에서만 만들어졌고 서버에 저장되지 않았어요 · 만든 날 ' + esc(new Date().toISOString().slice(0, 10)) + '</div></article>';
-    window.__albumChapters = chapters.map((c) => ({ n: c.n, photos: c.photos.length, idx: c.idx, hasMap: !!c.loc, stayMin: c.stay ? Math.round(c.stay.sec / 60) : 0 }));
+    window.__albumChapters = chapters.map((c) => ({ n: c.n, photos: c.photos.length, idx: c.idx, hasMap: !!c.loc, bgZ: window.__bgZ, stayMin: c.stay ? Math.round(c.stay.sec / 60) : 0 }));
     return h;
   }
 
@@ -312,16 +318,22 @@
       photos.forEach((p) => place(p, track, shiftSec));
       photos.sort((a, b) => (a.tAdj == null) - (b.tAdj == null) || a.tAdj - b.tAdj);
       const pr = makePr(track, photos);
-      let bgUrl = null;
+      let bgUrl = null, bg = null, bgCredit = '';
       if (pr && $('bg').checked) {
         prog.textContent = '배경 지도 받는 중…';
-        try { bgUrl = await basemap(pr); } catch (e) { bgUrl = null; }
+        const kind = $('bgkind').value, detail = parseInt($('bgdetail').value, 10) || 0;
+        try { bg = await basemap(pr, kind, detail); } catch (e) { bg = null; }
+        if (!bg && kind !== 'osm') { // 지형 지도가 안 되면 일반 지도로 한 번 더
+          prog.textContent = '지형 지도를 못 받아 일반 지도로 다시 시도해요…';
+          try { bg = await basemap(pr, 'osm', detail); } catch (e) { bg = null; }
+        }
+        bgUrl = bg ? bg.url : null; bgCredit = bg ? bg.credit : ''; window.__bgZ = bg ? bg.z : null;
         if (!bgUrl) { err.textContent = '배경 지도를 불러오지 못해 길만 표시했어요. (인터넷 연결을 확인하거나 배경 지도를 끄고 만들 수 있어요)'; err.hidden = false; }
       }
       const st = track ? C.trackStats(track) : null;
       const title = $('title').value.trim() || (st ? dayLabel(st.start) + ' 기록' : '사진 앨범');
       $('out').innerHTML = '<div class="bar noprint" style="margin:0 0 10px"><button class="btn primary" id="doPrint" type="button">🖨 PDF로 저장 / 인쇄</button>' +
-        '<button class="btn" id="doSave" type="button">💾 HTML 파일로 저장</button></div>' + buildReport(title, track, photos, pr, bgUrl);
+        '<button class="btn" id="doSave" type="button">💾 HTML 파일로 저장</button></div>' + buildReport(title, track, photos, pr, bgUrl, bgCredit);
       $('doPrint').onclick = () => window.print();
       $('doSave').onclick = () => saveHtml(title);
       const located = photos.filter((p) => p.loc.how !== 'none').length;

@@ -79,15 +79,19 @@ svg.map, svg.elev { width: 100%; height: auto; display: block; background: #f8fa
     </div>
     <label for="title">리포트 제목 <span class="muted">(비우면 자동)</span></label>
     <input type="text" id="title" maxlength="80" placeholder="예: 속리산 산행">
-    <label style="font-weight:500;margin-top:12px"><input type="checkbox" id="bg" checked> 배경 지도 넣기 (OpenStreetMap)</label>
+    <label style="font-weight:500;margin-top:12px"><input type="checkbox" id="bg" checked> 배경 지도 넣기</label>
+    <div class="two">
+      <div><label for="bgkind">지도 종류</label><select id="bgkind"><option value="osm">일반 (OpenStreetMap)</option><option value="topo">지형·등고선 (OpenTopoMap)</option></select></div>
+      <div><label for="bgdetail">글자·지명 크기</label><select id="bgdetail"><option value="-1">크게(덜 자세히)</option><option value="0" selected>보통</option><option value="1">작게(더 자세히)</option></select></div>
+    </div>
     <div class="bar"><button class="btn primary" id="make" type="button">리포트 만들기</button></div>
     <div id="progress" aria-live="polite"></div>
     <div class="err" id="err" hidden></div>
   </div>
   <div id="out"></div>
 </div>
-<script src="js/core.js?v=202611241727"></script>
-<script src="js/exif.js?v=202611241727"></script>
-<script src="js/album.js?v=202611241727"></script>
+<script src="js/core.js?v=202611241731"></script>
+<script src="js/exif.js?v=202611241731"></script>
+<script src="js/album.js?v=202611241731"></script>
 </body>
 </html>
