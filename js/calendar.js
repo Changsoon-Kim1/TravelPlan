@@ -31,6 +31,10 @@
   const eventsOn = (iso) => S.events.filter((e) => C.eventCoversDay(e, iso)).sort(inDayOrder);
 
   function summaryHTML() {
+    if (S.trip && S.trip.mode === 'general') {
+      const days = new Set(S.events.map((e) => e.day)).size;
+      return '<div class="cal-summary">📌 일정 <b>' + S.events.length + '개</b> · 일정 있는 날 <b>' + days + '일</b></div>';
+    }
     const olle = S.events.filter((e) => e.course_id && byId(e.course_id));
     const km = olle.reduce((s, e) => s + byId(e.course_id).distance, 0);
     const days = new Set(olle.map((e) => e.day)).size;

@@ -39,13 +39,17 @@
     let h = '<div class="rp-bar no-print"><button class="btn" id="rpClose">← 닫기</button>' +
       '<button class="btn primary" id="rpPrint">🖨 PDF로 저장 / 인쇄</button></div>' +
       '<article class="rp-page">';
-    h += '<header class="rp-head"><h1>' + esc(t.title || '제주 올레길 여행') + '</h1><div class="rp-sub">' +
-      esc(fmtDay(t.start_date)) + ' ~ ' + esc(fmtDay(t.end_date)) + ' · ' + (days.length - 1) + '박 ' + days.length + '일 · 동행 2명</div></header>';
+    h += '<header class="rp-head"><h1>' + esc(t.title || '여행') + '</h1><div class="rp-sub">' +
+      esc(fmtDay(t.start_date)) + ' ~ ' + esc(fmtDay(t.end_date)) + ' · ' + (days.length - 1) + '박 ' + days.length + '일</div></header>';
 
-    h += '<section class="rp-sec"><h2>한눈에 보기</h2><div class="rp-stats">' +
+    const general = t.mode === 'general';
+    h += '<section class="rp-sec"><h2>한눈에 보기</h2><div class="rp-stats">' + (general ?
+      '<div><small>일정</small><b>' + evs.length + '개</b></div>' +
+      '<div><small>일정 있는 날</small><b>' + new Set(evs.map((e) => e.day)).size + '일</b></div>' +
+      '<div><small>⭐ 관심 장소</small><b>' + S.places.length + '곳</b></div>' :
       '<div><small>올레 코스</small><b>' + olle.length + '개</b></div>' +
       '<div><small>걷는 날</small><b>' + walkDays + '일</b></div>' +
-      '<div><small>올레 거리(공식)</small><b>' + km.toFixed(1) + 'km</b></div>' +
+      '<div><small>올레 거리(공식)</small><b>' + km.toFixed(1) + 'km</b></div>') +
       '<div><small>숙박 계획</small><b>' + nights.length + '/' + (days.length - 1) + '박</b></div></div></section>';
 
     // 날짜별
@@ -101,7 +105,7 @@
     days.slice(0, -1).forEach((iso) => { if (!stays.some((e) => (e.end_day && e.end_day > e.day ? iso >= e.day && iso < e.end_day : e.day === iso))) warns.push(md(iso) + ' 숙박 미정'); });
     h += '<section class="rp-sec"><h2>점검할 점</h2>' + (warns.length ? '<ul class="rp-ul">' + warns.map((w) => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '<p>특별히 걸리는 점이 없어요.</p>') + '</section>';
 
-    h += '<footer class="rp-foot">만든 날 ' + esc(TPUtil.todayISO()) + ' · 코스 거리·시간은 제주올레 공식 안내 기준</footer></article>';
+    h += '<footer class="rp-foot">만든 날 ' + esc(TPUtil.todayISO()) + ' ' + (general ? '' : '· 코스 거리·시간은 제주올레 공식 안내 기준') + '</footer></article>';
     return h;
   }
 

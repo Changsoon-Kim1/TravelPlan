@@ -10,6 +10,7 @@
   const pinMarkers = {};      // eventId -> marker
   let onPickPlace = () => {};  // 지도를 길게 눌렀을 때
   let colors = {};
+  let olleOn = true;          // 일반 여행에서는 올레 코스를 그리지 않는다
   let routes = {};            // 올린 GPX 경로 { courseId: [[lat,lon],...] }
   let selectedId = null;
   let scheduled = new Set();
@@ -60,6 +61,7 @@
 
   function drawCourse(c) {
     if (groups[c.id]) { groups[c.id].group.remove(); delete groups[c.id]; }
+    if (!olleOn) return;
     const { path, exact } = pathFor(c);
     const pick = () => onSelect(c.id);
     const hit = L.polyline(path, { color: '#000', weight: 22, opacity: 0, bubblingMouseEvents: false }).on('click', pick);
@@ -87,7 +89,7 @@
   function naverLink(name) {
     const q = String(name || '').trim();
     if (!q) return '';
-    return '<a class="btn small naver" target="_blank" rel="noopener" href="' + esc(TPUtil.links.naverMap(/제주/.test(q) ? q : '제주 ' + q)) + '">🗺 네이버 지도</a>';
+    return '<a class="btn small naver" target="_blank" rel="noopener" href="' + esc(TPUtil.links.naverMap(olleOn && !/제주/.test(q) ? '제주 ' + q : q)) + '">🗺 네이버 지도</a>';
   }
   function pinPopupHtml(e) {
     const canEdit = TPData.canEdit();
@@ -181,6 +183,23 @@
       return true;
     },
     ready: () => ready,
+    // 여행 종류에 맞게: 올레 여행이면 코스를 그리고, 일반 여행이면 숨긴다
+    setMode(mode) {
+      const on = mode !== 'general';
+      if (on === olleOn) return;
+      olleOn = on;
+      selectedId = null;
+      if (ready) window.OLLE_COURSES.forEach(drawCourse);
+    },
+    // 여행의 지도 시작 위치로 이동 (올레 여행이면 제주 전체)
+    goTo(trip) {
+      if (!ready) return;
+      map.closePopup(); searchLayer.clearLayers();
+      if (trip && trip.mode === 'general') {
+        if (trip.map_lat != null && trip.map_lng != null) map.setView([trip.map_lat, trip.map_lng], trip.map_zoom || 11);
+        else map.setView([36.5, 127.8], 7);
+      } else map.setView([33.38, 126.55], 10);
+    },
     colorOf: (id) => colors[id],
     isExact: (id) => !!(routes[id] && routes[id].length > 1),
     exactCount: () => Object.keys(routes).filter((id) => routes[id] && routes[id].length > 1).length,

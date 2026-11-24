@@ -2,12 +2,13 @@
 (function () {
   'use strict';
   const CFG = window.TP_CONFIG;
-  const LS_SESSION = 'tp_session', LS_TOKEN = 'tp_share_token';
+  const LS_SESSION = 'tp_session', LS_TOKEN = 'tp_share_token', LS_TRIP = 'tp_trip_id';
 
   let session = null;       // { access_token, refresh_token, expires_at, email }
   let mode = 'none';        // 'owner' | 'guest' | 'none'
   let shareToken = null;
   let trip = null;
+  let trips = [];
   let onAuthLost = function () {};
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -98,6 +99,13 @@
       place: ev.place || null, lat: ev.lat == null ? null : ev.lat, lng: ev.lng == null ? null : ev.lng
     };
   }
+  function normTrip(t) {
+    return Object.assign({}, t, {
+      mode: t.mode === 'general' ? 'general' : 'olle',
+      map_lat: t.map_lat == null ? null : Number(t.map_lat), map_lng: t.map_lng == null ? null : Number(t.map_lng),
+      map_zoom: t.map_zoom == null ? null : Number(t.map_zoom)
+    });
+  }
   function randomToken() {
     const a = new Uint8Array(24);
     crypto.getRandomValues(a);
@@ -149,33 +157,47 @@
       if (mode === 'guest') {
         const bundle = await rpc('shared_bundle', { p_token: shareToken });
         if (!bundle) { throw new ApiError('invalid_token', 400); }
-        const routes = (await rpc('shared_routes', { p_token: shareToken })) || {};
-        trip = Object.assign({}, bundle.trip);
+        trip = normTrip(bundle.trip);
+        const routes = trip.mode === 'olle' ? ((await rpc('shared_routes', { p_token: shareToken })) || {}) : {};
         return { trip, events: (bundle.events || []).map(normEvent), routes, places: (bundle.places || []).map(normPlace) };
       }
       if (mode !== 'owner') throw new ApiError('로그인이 필요합니다.', 401);
-      let rows = await rest('trips?select=*&order=created_at.asc&limit=1');
-      let seeded = false;
-      if (!rows.length) {
-        rows = await rest('trips', {
-          method: 'POST', headers: { Prefer: 'return=representation' },
-          body: { title: CFG.TRIP_TITLE, start_date: CFG.TRIP_START, end_date: CFG.TRIP_END }
-        });
-        await rest('trip_events', {
-          method: 'POST', headers: { Prefer: 'return=minimal' },
-          body: CFG.SEED_EVENTS.map((e) => Object.assign({ trip_id: rows[0].id }, eventPayload(e)))
-        });
-        seeded = true;
-      }
-      trip = Object.assign({}, rows[0], { can_edit: true });
+      const list = (await rest('trips?select=*&order=start_date.asc&limit=200')).map(normTrip);
+      trips = list;
+      if (!list.length) { trip = null; return { trip: null, trips: list, events: [], routes: {}, places: [] }; }
+      const want = lsGet(LS_TRIP);
+      trip = Object.assign({}, list.find((t) => t.id === want) || list[0], { can_edit: true });
+      lsSet(LS_TRIP, trip.id);
       const [evs, rts, pls] = await Promise.all([
         rest('trip_events?trip_id=eq.' + trip.id + '&select=*&order=day.asc&limit=1000'),
-        rest('course_routes?trip_id=eq.' + trip.id + '&select=course_id,path'),
+        trip.mode === 'olle' ? rest('course_routes?select=course_id,path') : Promise.resolve([]),
         rest('trip_places?trip_id=eq.' + trip.id + '&select=*&order=created_at.asc&limit=500')
       ]);
       const routes = {};
       rts.forEach((r) => { routes[r.course_id] = r.path; });
-      return { trip, events: evs.map(normEvent), routes, places: pls.map(normPlace), seeded };
+      return { trip, trips: list, events: evs.map(normEvent), routes, places: pls.map(normPlace) };
+    },
+
+    // ---- 여행 목록 (소유자) ----
+    tripList: () => trips.slice(),
+    selectTrip(id) { lsSet(LS_TRIP, id); },
+    async createTrip(f) {
+      const rows = await rest('trips', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: {
+          title: f.title, start_date: f.start_date, end_date: f.end_date, mode: f.mode === 'general' ? 'general' : 'olle',
+          map_lat: f.map_lat == null ? null : f.map_lat, map_lng: f.map_lng == null ? null : f.map_lng, map_zoom: f.map_zoom == null ? null : f.map_zoom
+        }
+      });
+      return normTrip(rows[0]);
+    },
+    async patchTrip(id, patch) {
+      const rows = await rest('trips?id=eq.' + id, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: patch });
+      return normTrip(rows[0]);
+    },
+    async deleteTrip(id) {
+      await rest('trips?id=eq.' + id, { method: 'DELETE' });
+      if (lsGet(LS_TRIP) === id) lsDel(LS_TRIP);
     },
 
     async saveEvent(ev) {
@@ -209,16 +231,16 @@
 
     // ---- 소유자 전용 ----
     async saveRoutes(map) {
-      const body = Object.keys(map).map((cid) => ({ trip_id: trip.id, course_id: cid, path: map[cid], point_count: map[cid].length }));
+      const body = Object.keys(map).map((cid) => ({ course_id: cid, path: map[cid], point_count: map[cid].length }));
       if (!body.length) return;
-      await rest('course_routes?on_conflict=trip_id,course_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body });
+      await rest('course_routes?on_conflict=owner_id,course_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body });
     },
     async deleteRoute(courseId) {
-      await rest('course_routes?trip_id=eq.' + trip.id + '&course_id=eq.' + encodeURIComponent(courseId), { method: 'DELETE' });
+      await rest('course_routes?course_id=eq.' + encodeURIComponent(courseId), { method: 'DELETE' });
     },
     async updateTrip(patch) {
       const rows = await rest('trips?id=eq.' + trip.id, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: patch });
-      trip = Object.assign({}, trip, rows[0], { can_edit: true });
+      trip = Object.assign({}, trip, normTrip(rows[0]), { can_edit: true });
       return trip;
     },
     async rotateShareToken() { return Data.updateTrip({ share_token: randomToken() }); }

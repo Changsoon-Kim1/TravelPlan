@@ -51,11 +51,13 @@ window.App = (function () {
       menu.hidden = true;
       const act = b.dataset.act;
       if (act === 'share') TPDialogs.openShareModal();
+      else if (act === 'trips') TPTrips.open();
       else if (act === 'gpx') TPDialogs.openGpxModal();
       else if (act === 'refresh') refresh(false);
       else if (act === 'login') TPDialogs.openLoginModal();
       else if (act === 'logout') { TPData.logout(); resetState(); boot(); }
     });
+    $('#tripSwitch').addEventListener('click', () => { if (TPData.isOwner()) TPTrips.open(); });
     $('#mapNotice').addEventListener('click', (e) => { if (e.target.id === 'noticeGpx') TPDialogs.openGpxModal(); });
 
     $('#gateForm').addEventListener('submit', async (e) => {
@@ -78,7 +80,7 @@ window.App = (function () {
 
   function resetState() {
     S.trip = null; S.events = []; S.routes = {}; S.places = [];
-    if (TPMap.ready()) TPMap.setRoutes({});
+    if (TPMap.ready()) { TPMap.setMode('olle'); TPMap.setRoutes({}); }
     TPPanel.close();
   }
 
@@ -198,31 +200,49 @@ window.App = (function () {
 
   function updateNotice() {
     const el = $('#mapNotice');
-    if (!TPMap.ready()) { el.hidden = true; return; }
+    if (!TPMap.ready() || !isOlle() || !S.trip) { el.hidden = true; return; }
     const n = TPMap.exactCount(), total = window.OLLE_COURSES.length;
     el.hidden = n >= total;
     el.innerHTML = '⚠ 점선은 <b>임시 대략 경로</b>예요 (공식 경로 ' + n + '/' + total + ')' +
       (TPData.isOwner() ? ' <button type="button" id="noticeGpx">GPX 올리기</button>' : '');
   }
 
+  const isOlle = () => !S.trip || S.trip.mode !== 'general';
+
   function updateChrome() {
     const t = S.trip, mode = TPData.mode();
-    $('#tripTitle').textContent = t.title;
-    const nights = C.dateRange(t.start_date, t.end_date).length - 1;
-    $('#tripDates').textContent = fmtDay(t.start_date) + ' ~ ' + fmtDay(t.end_date) + ' · ' + nights + '박 ' + (nights + 1) + '일';
-    document.title = t.title + ' · 제주 여행 계획';
+    $('#tripTitle').textContent = t ? t.title : '여행을 만들어 주세요';
+    if (t) {
+      const nights = C.dateRange(t.start_date, t.end_date).length - 1;
+      $('#tripDates').textContent = fmtDay(t.start_date) + ' ~ ' + fmtDay(t.end_date) + ' · ' + nights + '박 ' + (nights + 1) + '일';
+    } else $('#tripDates').textContent = '';
+    document.title = (t ? t.title : '여행 계획') + ' · 여행 계획';
+    $('#tripSwitch').classList.toggle('can', mode === 'owner');
+    $('#tripCaret').hidden = mode !== 'owner';
     const badge = $('#modeBadge');
     if (mode === 'owner') { badge.textContent = '내 계정'; badge.className = 'badge owner'; }
     else { badge.textContent = TPData.canEdit() ? '공유 링크' : '공유 링크 · 보기 전용'; badge.className = 'badge guest'; }
     $$('#menu [data-owner]').forEach((el) => { el.hidden = mode !== 'owner'; });
     $$('#menu [data-guest]').forEach((el) => { el.hidden = mode === 'owner'; });
+    $$('#menu [data-olle]').forEach((el) => { if (!isOlle()) el.hidden = true; });
+    $$('#menu [data-needtrip]').forEach((el) => { if (!t) el.hidden = true; });
     $('#menuUser').textContent = mode === 'owner' ? TPData.email() : '';
     $('#menuUser').hidden = mode !== 'owner';
+    // 여행 종류에 따른 화면 구성
+    const olle = isOlle();
+    $('#filterBar').hidden = !olle;
+    $('#placeQ').placeholder = olle ? '🔍 장소 검색 (예: 제주 신라호텔)' : '🔍 장소 검색 (예: 호텔·식당·관광지 이름)';
+    $('#map').setAttribute('aria-label', olle ? '제주도 올레길 지도' : '여행 지도');
   }
 
   function applyData(data, keepUI) {
+    if (!data.trip) { applyEmpty(); return; }
     S.trip = data.trip; S.events = data.events.slice().sort(C.compareEvents); S.routes = data.routes || {}; S.places = data.places || [];
+    TPMap.setMode(S.trip.mode);
+    TPPlaces.setRegion(S.trip);
     if (!keepUI) {
+      S.filter = 'all';
+      TPMap.goTo(S.trip);
       const today = TPUtil.todayISO();
       S.selectedDay = (today >= S.trip.start_date && today <= S.trip.end_date) ? today : S.trip.start_date;
       S.calMonth = S.selectedDay.slice(0, 7);
@@ -238,6 +258,30 @@ window.App = (function () {
     if (keepUI) TPPanel.refreshSchedule();
   }
 
+  // 여행이 하나도 없을 때의 빈 화면
+  function applyEmpty() {
+    S.trip = null; S.events = []; S.routes = {}; S.places = []; S.filter = 'all';
+    TPMap.setMode('olle'); TPPlaces.setRegion(null);
+    TPMap.setRoutes({}); TPMap.setScheduled(new Map()); TPMap.setEventPins([]); TPMap.setPlacePins([]); TPMap.goTo(null);
+    TPPanel.close();
+    updateChrome(); applyFilter();
+    const r = $('#calRoot'); if (r) r.innerHTML = '<p class="muted" style="padding:16px">여행이 없어요. 위쪽 여행 이름을 눌러 새 여행을 만들어 주세요.</p>';
+  }
+
+  // 다른 여행으로 전환 (id 가 null 이면 첫 여행/빈 화면)
+  async function switchTrip(id) {
+    if (id) TPData.selectTrip(id);
+    $('#loading').hidden = false;
+    try {
+      TPPanel.close();
+      const data = await TPData.loadAll();
+      applyData(data, false);
+      if (!data.trip) TPTrips.open({ create: true });
+      showView(S.view);
+    } catch (err) { toast(err.message || '여행을 불러오지 못했어요', 'err'); }
+    finally { $('#loading').hidden = true; }
+  }
+
   function afterEventsChanged() {
     S.events.sort(C.compareEvents);
     TPMap.setScheduled(scheduledSet());
@@ -251,6 +295,7 @@ window.App = (function () {
     if (!S.trip) return;
     try {
       const data = await TPData.loadAll();
+      if (!data.trip || data.trip.id !== S.trip.id) { applyData(data, false); if (!data.trip) TPTrips.open({ create: true }); return; }
       const before = JSON.stringify([S.events, S.places, Object.keys(S.routes).length, S.trip.share_enabled, S.trip.share_can_edit, S.trip.can_edit]);
       const sorted = data.events.slice().sort(C.compareEvents);
       const after = JSON.stringify([sorted, data.places || [], Object.keys(data.routes || {}).length, data.trip.share_enabled, data.trip.share_can_edit, data.trip.can_edit]);
@@ -273,8 +318,8 @@ window.App = (function () {
       const data = await TPData.loadAll();
       applyData(data, false);
       hideGate();
-      if (data.seeded) toast('기본 일정(항공·숙소)을 넣어 두었어요');
       showView(S.view);
+      if (!data.trip) TPTrips.open({ create: true });
     } catch (err) {
       if (err.raw === 'invalid_token') {
         TPData.forgetShareToken();
@@ -288,5 +333,5 @@ window.App = (function () {
   }
 
   document.addEventListener('DOMContentLoaded', boot);
-  return { boot, showView, showCourse, showPin, findOnMap, markPlace, unmarkPlace, afterEventsChanged, updateNotice, refresh };
+  return { boot, switchTrip, showView, showCourse, showPin, findOnMap, markPlace, unmarkPlace, afterEventsChanged, updateNotice, refresh };
 })();

@@ -272,3 +272,23 @@ end $$;
 
 revoke all on function public.shared_place_save(text, jsonb), public.shared_place_delete(text, uuid) from public;
 grant execute on function public.shared_place_save(text, jsonb), public.shared_place_delete(text, uuid) to anon, authenticated;
+
+-- ===== migration: multi_trip =====
+-- 여행 종류(올레/일반)와 지도 시작 위치, 코스 경로를 계정 단위로 이동
+alter table public.trips add column mode text not null default 'olle' check (mode in ('olle','general'));
+alter table public.trips add column map_lat double precision check (map_lat between -90 and 90);
+alter table public.trips add column map_lng double precision check (map_lng between -180 and 180);
+alter table public.trips add column map_zoom int check (map_zoom between 3 and 18);
+alter table public.course_routes add column owner_id uuid references auth.users(id) on delete cascade;
+update public.course_routes r set owner_id = t.owner_id from public.trips t where t.id = r.trip_id;
+alter table public.course_routes alter column owner_id set not null;
+alter table public.course_routes alter column owner_id set default auth.uid();
+drop policy "owner all" on public.course_routes;
+alter table public.course_routes drop constraint course_routes_pkey;
+alter table public.course_routes drop constraint course_routes_trip_id_fkey;
+alter table public.course_routes drop column trip_id;
+alter table public.course_routes add primary key (owner_id, course_id);
+create policy "owner all" on public.course_routes for all to authenticated
+  using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
+-- shared_bundle: trip 에 mode, map_lat, map_lng, map_zoom 포함 / shared_routes: 올레 여행이면 소유자의 모든 경로 반환
+-- (현재 배포된 함수 정의는 Supabase 프로젝트의 migration 'multi_trip' 참고)

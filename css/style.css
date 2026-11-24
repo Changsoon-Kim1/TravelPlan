@@ -23,7 +23,7 @@ h2 { font-size: 20px; } h3 { font-size: 15px; }
   position: relative; z-index: 1200; height: var(--top); flex: none; display: flex; align-items: center; gap: 10px;
   padding: 0 12px; background: var(--brand); color: #fff;
 }
-.brand { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.brand { background: none; border: 0; color: inherit; font: inherit; text-align: left; padding: 0; cursor: default; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
 .logo { font-size: 22px; }
 .brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .brand-text b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -306,3 +306,14 @@ button.find-icon { flex: none; align-self: flex-start; border: 1px solid var(--b
   .rp-page { margin: 0; max-width: none; padding: 0; border-radius: 0; font-size: 11.5px; }
   .rp-sec { break-inside: auto; }
 }
+
+/* ---------- 여행 목록 ---------- */
+.brand.can { cursor: pointer; }
+.brand .caret { opacity: .8; font-size: 12px; }
+.trip-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.trip-list li { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 12px; padding: 4px 6px 4px 4px; }
+.trip-list li.cur { border-color: var(--brand); background: #f0fdfa; }
+.trip-pick { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 8px; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.trip-pick b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-pick small { color: var(--muted); }
+#tripForm h3 { margin: 4px 0 8px; font-size: 15px; }

@@ -32,7 +32,8 @@
       { kind: 'other', title: '', day: S.selectedDay || S.trip.start_date, end_day: '', start_time: '', end_time: '', note: '', course_id: '', place: '', lat: null, lng: null },
       opts.defaults || {}, editing || {});
     const allDay = !d.start_time;
-    const kindOpts = Object.keys(KIND).map((k) => '<option value="' + k + '"' + (k === d.kind ? ' selected' : '') + '>' + KIND[k].icon + ' ' + KIND[k].label + '</option>').join('');
+    const generalTrip = S.trip && S.trip.mode === 'general';
+    const kindOpts = Object.keys(KIND).filter((k) => !(generalTrip && k === 'olle' && d.kind !== 'olle')).map((k) => '<option value="' + k + '"' + (k === d.kind ? ' selected' : '') + '>' + KIND[k].icon + ' ' + KIND[k].label + '</option>').join('');
     const courseOpts = '<option value="">(선택 안 함)</option>' + window.OLLE_COURSES.map((c) =>
       '<option value="' + c.id + '"' + (c.id === d.course_id ? ' selected' : '') + '>' + esc(c.code) + ' ' + esc(c.name) + ' · ' + c.distance.toFixed(1) + 'km</option>').join('');
 
@@ -43,7 +44,7 @@
       '<label id="rowCourse" ' + (d.kind === 'olle' ? '' : 'hidden') + '>올레 코스<select id="fCourse">' + courseOpts + '</select></label>' +
       '<div id="rowPlace" ' + (d.kind === 'olle' ? 'hidden' : '') + '><div class="lbl">장소 <small class="muted">(지도에 핀·날짜로 표시)</small></div>' +
       '<div class="place-sel" id="pSel"></div>' +
-      '<div class="copy-row"><input id="pQ" type="search" enterkeyhint="search" placeholder="장소 검색 (예: 제주 신라호텔)"><button type="button" class="btn" id="pGo">검색</button></div>' +
+      '<div class="copy-row"><input id="pQ" type="search" enterkeyhint="search" placeholder="장소 검색 (예: 호텔·식당 이름)"><button type="button" class="btn" id="pGo">검색</button></div>' +
       '<ul id="pRes" class="place-results inline" hidden></ul></div>' +
       '<label>제목<input id="fTitle" maxlength="200" value="' + esc(d.title) + '" placeholder="예: 저녁 식사, 렌터카 반납"></label>' +
       '<div class="two"><label>날짜<input type="date" id="fDay" value="' + esc(d.day) + '"></label>' +

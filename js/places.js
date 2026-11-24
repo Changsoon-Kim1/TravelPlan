@@ -3,6 +3,14 @@
 (function () {
   'use strict';
   const JEJU_VIEWBOX = '125.9,34.0,127.1,33.0'; // 제주도 근처를 우선 (왼쪽,위,오른쪽,아래)
+  // 검색 범위: 올레 여행은 제주, 일반 여행은 지도 중심 근처를 우선(전 세계 검색 가능), 위치 없으면 전 세계
+  let region = { kind: 'jeju' };
+  function setRegion(trip) {
+    if (!trip || trip.mode === 'olle') region = { kind: 'jeju' };
+    else if (trip.map_lat != null && trip.map_lng != null) region = { kind: 'near', lat: trip.map_lat, lng: trip.map_lng };
+    else region = { kind: 'world' };
+  }
+  const boxAround = (lat, lng, d) => [lng - d, lat + d, lng + d, lat - d].map((x) => x.toFixed(4)).join(',');
 
   async function getJson(url) {
     const ctl = new AbortController();
@@ -21,9 +29,11 @@
     return parts.filter((x, i) => parts.indexOf(x) === i).join(' ');
   }
 
-  async function nominatim(q) {
-    const u = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=8&accept-language=ko&countrycodes=kr' +
-      '&viewbox=' + JEJU_VIEWBOX + '&q=' + encodeURIComponent(q);
+  async function nominatim(q, rg) {
+    let area = '';
+    if (rg.kind === 'jeju') area = '&countrycodes=kr&viewbox=' + JEJU_VIEWBOX;
+    else if (rg.kind === 'near') area = '&viewbox=' + boxAround(rg.lat, rg.lng, 1.5);
+    const u = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=8&accept-language=ko' + area + '&q=' + encodeURIComponent(q);
     const rows = await getJson(u);
     return rows.map((r) => ({
       name: (r.name || (r.display_name || '').split(',')[0] || q).trim(),
@@ -32,9 +42,10 @@
     }));
   }
 
-  async function photon(q) {
-    // 제주도 중심 좌표를 주면 가까운 결과가 앞에 온다
-    const u = 'https://photon.komoot.io/api/?limit=8&lat=33.38&lon=126.55&q=' + encodeURIComponent(q);
+  async function photon(q, rg) {
+    // 중심 좌표를 주면 가까운 결과가 앞에 온다
+    const c = rg.kind === 'jeju' ? '&lat=33.38&lon=126.55' : rg.kind === 'near' ? '&lat=' + rg.lat + '&lon=' + rg.lng : '';
+    const u = 'https://photon.komoot.io/api/?limit=8' + c + '&q=' + encodeURIComponent(q);
     const j = await getJson(u);
     return (j.features || []).filter((f) => f.geometry && f.geometry.coordinates).map((f) => {
       const p = f.properties || {};
@@ -43,16 +54,17 @@
         addr: [p.state, p.city || p.county, p.district, p.street].filter(Boolean).join(' '),
         lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0]
       };
-    }).filter((r) => r.lat >= 32.5 && r.lat <= 34.2 && r.lng >= 125.5 && r.lng <= 127.3); // 제주 권역만
+    }).filter((r) => rg.kind !== 'jeju' || (r.lat >= 32.5 && r.lat <= 34.2 && r.lng >= 125.5 && r.lng <= 127.3)); // 올레 여행은 제주 권역만
   }
 
-  async function search(q) {
+  async function search(q, opts) {
     q = (q || '').trim();
+    const rg = (opts && opts.world) ? { kind: 'world' } : region;
     if (!q) return [];
     let out = [], failed = 0;
-    try { out = await nominatim(q); } catch (e) { failed++; }
+    try { out = await nominatim(q, rg); } catch (e) { failed++; }
     if (!out.length) {
-      try { out = await photon(q); } catch (e) { failed++; }
+      try { out = await photon(q, rg); } catch (e) { failed++; }
     }
     if (!out.length && failed >= 2) throw new Error('장소 검색 서버에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
     // 같은 좌표(소수 4자리)에 같은 이름은 하나로
@@ -68,5 +80,5 @@
     } catch (e) { return { name: '선택한 위치', addr: '' }; }
   }
 
-  window.TPPlaces = { search, reverse };
+  window.TPPlaces = { search, reverse, setRegion };
 })();
