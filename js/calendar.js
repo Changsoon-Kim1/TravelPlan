@@ -74,9 +74,11 @@
       '<div class="ev-time">' + esc(multi ? fmtDay(ev.day) + '~' + fmtDay(ev.end_day) : fmtTimeRange(ev)) + '</div>' +
       '<div class="ev-main"><b>' + k.icon + ' ' + esc(ev.title) + '</b>';
     if (course) h += '<div class="muted sm">' + course.distance.toFixed(1) + 'km · ' + esc(course.timeText) + ' · 난이도 ' + esc(course.difficulty) + '</div>';
+    if (ev.place) h += '<div class="muted sm">📍 ' + esc(ev.place) + '</div>';
     if (ev.note) h += '<div class="muted sm">' + esc(ev.note) + '</div>';
     h += '</div><div class="row-actions">';
     if (course) h += '<button class="icon-btn" data-course="' + esc(course.id) + '" title="지도에서 코스 보기">🗺</button>';
+    if (ev.lat != null) h += '<button class="icon-btn" data-pin="' + esc(ev.id) + '" title="지도에서 위치 보기">📍</button>';
     if (canEdit) h += '<button class="icon-btn" data-edit="' + esc(ev.id) + '" title="수정">✎</button>' +
       '<button class="icon-btn danger" data-del="' + esc(ev.id) + '" title="삭제">🗑</button>';
     return h + '</div></li>';
@@ -138,6 +140,7 @@
       else if (d.edit) { const ev = S.events.find((x) => x.id === d.edit); if (ev) TPDialogs.openEventModal({ event: ev }); }
       else if (d.del) { TPDialogs.deleteEvent(d.del); }
       else if (d.course) { App.showCourse(d.course); }
+      else if (d.pin) { App.showPin(d.pin); }
     });
   }
 

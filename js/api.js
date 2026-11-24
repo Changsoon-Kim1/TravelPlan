@@ -83,6 +83,7 @@
       id: e.id, day: e.day, end_day: e.end_day || null,
       start_time: TPCore.normTime(e.start_time), end_time: TPCore.normTime(e.end_time),
       title: e.title, kind: e.kind || 'other', course_id: e.course_id || null, note: e.note || '',
+      place: e.place || '', lat: e.lat == null ? null : Number(e.lat), lng: e.lng == null ? null : Number(e.lng),
       created_by: e.created_by || 'owner'
     };
   }
@@ -90,7 +91,8 @@
     return {
       day: ev.day, end_day: ev.end_day || null,
       start_time: ev.start_time || null, end_time: ev.end_time || null,
-      title: ev.title, kind: ev.kind || 'other', course_id: ev.course_id || null, note: ev.note || null
+      title: ev.title, kind: ev.kind || 'other', course_id: ev.course_id || null, note: ev.note || null,
+      place: ev.place || null, lat: ev.lat == null ? null : ev.lat, lng: ev.lng == null ? null : ev.lng
     };
   }
   function randomToken() {

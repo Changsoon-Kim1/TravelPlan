@@ -68,7 +68,8 @@ window.App = (function () {
     $('#gateRetry').addEventListener('click', () => boot());
 
     TPCalendar.init();
-    TPMap.init({ onSelect: (id) => TPPanel.open(id) });
+    TPMap.init({ onSelect: (id) => TPPanel.open(id), onPickPlace: pickPlace });
+    setupPlaceSearch();
     TPData.setAuthLostHandler(() => { resetState(); showGate('로그인이 만료되었어요. 다시 로그인해 주세요.'); });
 
     document.addEventListener('visibilitychange', () => { if (!document.hidden && S.trip) refresh(true); });
@@ -105,6 +106,41 @@ window.App = (function () {
     else TPCalendar.render();
   }
   function showCourse(id) { showView('map'); TPPanel.open(id); }
+  function showPin(id) { showView('map'); TPPanel.close && TPPanel.close(); setTimeout(() => TPMap.showPin(id), 60); }
+
+  // ---------- 장소 검색 ----------
+  function setupPlaceSearch() {
+    const form = $('#placeForm'), q = $('#placeQ'), list = $('#placeResults'), go = $('#placeGo');
+    const hide = () => { list.hidden = true; list.innerHTML = ''; };
+    let results = [];
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = q.value.trim();
+      if (!text) { hide(); TPMap.clearFound(); return; }
+      go.disabled = true; go.textContent = '…';
+      try {
+        results = await TPPlaces.search(text);
+        if (!results.length) { list.innerHTML = '<li class="none">검색 결과가 없어요. 이름을 줄이거나 지도를 길게 눌러 위치를 직접 고를 수 있어요.</li>'; }
+        else list.innerHTML = results.map((r, i) => '<li><button type="button" data-i="' + i + '"><b>' + esc(r.name) + '</b><small>' + esc(r.addr) + '</small></button></li>').join('');
+        list.hidden = false;
+      } catch (err) { TPUtil.toast(err.message || '검색하지 못했어요', 'err'); }
+      go.disabled = false; go.textContent = '검색';
+    });
+    list.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-i]');
+      if (!b) return;
+      const r = results[Number(b.dataset.i)];
+      hide(); q.blur();
+      TPPanel.close && TPPanel.close();
+      TPMap.showFound(r);
+    });
+    q.addEventListener('input', () => { if (!q.value) { hide(); TPMap.clearFound(); } });
+  }
+  async function pickPlace(lat, lng) {
+    TPUtil.toast('위치 확인 중…');
+    const info = await TPPlaces.reverse(lat, lng);
+    TPMap.showFound({ name: info.name, addr: info.addr, lat, lng });
+  }
 
   function applyFilter() {
     $$('#filterBar button').forEach((b) => b.classList.toggle('on', b.dataset.f === S.filter));
@@ -144,6 +180,7 @@ window.App = (function () {
     }
     TPMap.setRoutes(S.routes);
     TPMap.setScheduled(scheduledSet());
+    TPMap.setEventPins(S.events);
     updateChrome();
     updateNotice();
     applyFilter();
@@ -154,6 +191,7 @@ window.App = (function () {
   function afterEventsChanged() {
     S.events.sort(C.compareEvents);
     TPMap.setScheduled(scheduledSet());
+    TPMap.setEventPins(S.events);
     if (S.filter === 'sched') applyFilter();
     TPPanel.refreshSchedule();
     TPCalendar.render();
@@ -200,5 +238,5 @@ window.App = (function () {
   }
 
   document.addEventListener('DOMContentLoaded', boot);
-  return { boot, showView, showCourse, afterEventsChanged, updateNotice, refresh };
+  return { boot, showView, showCourse, showPin, afterEventsChanged, updateNotice, refresh };
 })();

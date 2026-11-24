@@ -154,3 +154,53 @@ revoke all on function public.shared_bundle(text), public.shared_routes(text),
   public.shared_event_save(text, jsonb), public.shared_event_delete(text, uuid) from public;
 grant execute on function public.shared_bundle(text), public.shared_routes(text),
   public.shared_event_save(text, jsonb), public.shared_event_delete(text, uuid) to anon, authenticated;
+
+-- ============================================================
+-- 추가 마이그레이션 trip_events_place: 일정에 장소명·좌표(지도 핀) 저장
+-- (위 shared_event_save 를 아래 버전으로 교체. 신규 설치 시 이 파일을 순서대로 실행)
+-- ============================================================
+alter table public.trip_events
+  add column if not exists place text check (place is null or char_length(place) <= 200),
+  add column if not exists lat double precision check (lat is null or (lat between -90 and 90)),
+  add column if not exists lng double precision check (lng is null or (lng between -180 and 180)),
+  add constraint trip_events_latlng_pair check ((lat is null) = (lng is null));
+
+create or replace function public.shared_event_save(p_token text, p_event jsonb) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare t public.trips; v_id uuid; r public.trip_events;
+begin
+  select * into t from private.trip_for_token(p_token);
+  if t.id is null then raise exception 'invalid_token' using errcode = '28000'; end if;
+  if not t.share_can_edit then raise exception 'read_only' using errcode = '42501'; end if;
+  v_id := nullif(p_event->>'id', '')::uuid;
+  if v_id is not null then
+    update public.trip_events set
+      day = (p_event->>'day')::date,
+      end_day = nullif(p_event->>'end_day', '')::date,
+      start_time = nullif(p_event->>'start_time', '')::time,
+      end_time = nullif(p_event->>'end_time', '')::time,
+      title = p_event->>'title',
+      kind = coalesce(nullif(p_event->>'kind', ''), 'other'),
+      course_id = nullif(p_event->>'course_id', ''),
+      note = nullif(p_event->>'note', ''),
+      place = case when p_event ? 'place' then nullif(p_event->>'place', '') else place end,
+      lat = case when p_event ? 'lat' then nullif(p_event->>'lat', '')::double precision else lat end,
+      lng = case when p_event ? 'lng' then nullif(p_event->>'lng', '')::double precision else lng end
+    where id = v_id and trip_id = t.id
+    returning * into r;
+    if r.id is null then raise exception 'not_found' using errcode = 'P0002'; end if;
+  else
+    if (select count(*) from public.trip_events where trip_id = t.id) >= 500 then
+      raise exception 'too_many_events' using errcode = '54000';
+    end if;
+    insert into public.trip_events (trip_id, day, end_day, start_time, end_time, title, kind, course_id, note, place, lat, lng, created_by)
+    values (t.id, (p_event->>'day')::date, nullif(p_event->>'end_day', '')::date,
+            nullif(p_event->>'start_time', '')::time, nullif(p_event->>'end_time', '')::time,
+            p_event->>'title', coalesce(nullif(p_event->>'kind', ''), 'other'),
+            nullif(p_event->>'course_id', ''), nullif(p_event->>'note', ''),
+            nullif(p_event->>'place', ''), nullif(p_event->>'lat', '')::double precision,
+            nullif(p_event->>'lng', '')::double precision, 'guest')
+    returning * into r;
+  end if;
+  return to_jsonb(r) - 'trip_id';
+end $$;

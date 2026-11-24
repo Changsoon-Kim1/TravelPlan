@@ -5,6 +5,9 @@
 
   let map = null;
   let ready = false;
+  let pinLayer = null, searchLayer = null;
+  const pinMarkers = {};      // eventId -> marker
+  let onPickPlace = () => {};  // 지도를 길게 눌렀을 때
   let colors = {};
   let routes = {};            // 올린 GPX 경로 { courseId: [[lat,lon],...] }
   let selectedId = null;
@@ -39,8 +42,8 @@
     const list = scheduled.get ? scheduled.get(c.id) : null;
     if (!list || !list.length) return '';
     const ev = list[0];
-    let t = TPUtil.fmtDay(ev.day) + ' ' + TPUtil.fmtTimeRange(ev);
-    if (list.length > 1) t += ' 외 ' + (list.length - 1);
+    let t = TPUtil.fmtTag(ev);
+    if (list.length > 1) t += ' +' + (list.length - 1);
     return '<span class="course-tag">' + esc(t) + '</span>';
   }
   function badgeIcon(c) {
@@ -78,8 +81,33 @@
     g.badge.setZIndexOffset(scheduled.has(id) ? 500 : (selectedId === id ? 1000 : 0));
   }
 
+  const KIND = TPUtil.KIND;
+  function pinPopupHtml(e) {
+    const canEdit = TPData.canEdit();
+    return '<div class="pin-pop"><b>' + esc((KIND[e.kind] || KIND.other).icon + ' ' + e.title) + '</b>' +
+      '<div class="muted sm">' + esc(TPUtil.fmtDay(e.day) + (e.end_day && e.end_day !== e.day ? '~' + TPUtil.fmtDay(e.end_day) : '') + ' ' + (e.end_day && e.end_day !== e.day ? '' : TPUtil.fmtTimeRange(e))) + '</div>' +
+      (e.place && e.place !== e.title ? '<div class="muted sm">📍 ' + esc(e.place) + '</div>' : '') +
+      (canEdit ? '<div class="pin-act"><button class="btn small" data-pin-edit="' + esc(e.id) + '">수정</button><button class="btn small danger" data-pin-del="' + esc(e.id) + '">삭제</button></div>' : '') + '</div>';
+  }
+  let foundPlace = null;
+  function foundPopupHtml(p) {
+    foundPlace = p;
+    return '<div class="pin-pop"><b>' + esc(p.name) + '</b>' + (p.addr ? '<div class="muted sm">' + esc(p.addr) + '</div>' : '') +
+      (TPData.canEdit() ? '<div class="pin-act"><button class="btn small primary" data-found-add="1">📅 일정에 추가</button></div>' : '') + '</div>';
+  }
+
   function addBaseLayers() {
     const osmAttr = '© OpenStreetMap contributors';
+    document.addEventListener('click', (ev) => {
+      const b = ev.target.closest && ev.target.closest('.pin-pop button');
+      if (!b) return;
+      if (b.dataset.pinEdit) { const e = S.events.find((x) => x.id === b.dataset.pinEdit); map.closePopup(); if (e) TPDialogs.openEventModal({ event: e }); }
+      else if (b.dataset.pinDel) { map.closePopup(); TPDialogs.deleteEvent(b.dataset.pinDel); }
+      else if (b.dataset.foundAdd && foundPlace) {
+        const p = foundPlace; map.closePopup(); searchLayer.clearLayers();
+        TPDialogs.openEventModal({ defaults: { kind: 'other', title: p.name, place: p.name, lat: p.lat, lng: p.lng } });
+      }
+    });
     const bases = {
       'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: osmAttr }),
       'OpenStreetMap (대체 서버)': L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', { maxNativeZoom: 18, maxZoom: 19, attribution: osmAttr }),
@@ -118,8 +146,13 @@
       }
       window.OLLE_COURSES.forEach((c) => { courseById[c.id] = c; });
       colors = TPCore.assignColors(window.OLLE_COURSES);
-      map = L.map(el, { zoomControl: true }).setView([33.38, 126.55], 10);
+      map = L.map(el, { zoomControl: false }).setView([33.38, 126.55], 10);
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
       map.attributionControl.setPrefix(false);
+      pinLayer = L.layerGroup().addTo(map);
+      searchLayer = L.layerGroup().addTo(map);
+      onPickPlace = opts.onPickPlace || onPickPlace;
+      map.on('contextmenu', (e) => onPickPlace(e.latlng.lat, e.latlng.lng)); // 길게 누르기(PC는 우클릭)
       addBaseLayers();
       window.OLLE_COURSES.forEach(drawCourse);
       ready = true;
@@ -140,6 +173,42 @@
       if (!ready) return;
       window.OLLE_COURSES.forEach((c) => restyle(c.id));
     },
+    // 일정에 위치가 있는 것들을 핀으로 (날짜·시간 꼬리표 포함)
+    setEventPins(events) {
+      if (!ready) return;
+      pinLayer.clearLayers();
+      Object.keys(pinMarkers).forEach((k) => delete pinMarkers[k]);
+      events.filter((e) => e.lat != null && e.lng != null && !e.course_id).forEach((e) => {
+        const k = KIND[e.kind] || KIND.other;
+        const icon = L.divIcon({
+          className: 'pin-wrap',
+          html: '<div class="pin"><span class="pin-dot">' + k.icon + '</span><span class="pin-tag">' + esc(TPUtil.fmtTag(e)) + '</span></div>',
+          iconSize: null
+        });
+        const m = L.marker([e.lat, e.lng], { icon, riseOnHover: true, zIndexOffset: 600 });
+        m.bindPopup(() => pinPopupHtml(e), { closeButton: true, minWidth: 190 });
+        m.addTo(pinLayer);
+        pinMarkers[e.id] = m;
+      });
+    },
+    showPin(id) {
+      const m = pinMarkers[id];
+      if (!m || !ready) return false;
+      map.setView(m.getLatLng(), Math.max(map.getZoom(), 14));
+      m.openPopup();
+      return true;
+    },
+    // 검색 결과(임시 마커): 일정에 추가하기 전까지만 보인다
+    showFound(place) {
+      if (!ready) return;
+      searchLayer.clearLayers();
+      const m = L.marker([place.lat, place.lng], { icon: L.divIcon({ className: 'pin-wrap', html: '<div class="pin found"><span class="pin-dot">📍</span></div>', iconSize: null }), zIndexOffset: 900 });
+      m.bindPopup(foundPopupHtml(place), { closeButton: true, minWidth: 190 });
+      m.addTo(searchLayer);
+      map.setView([place.lat, place.lng], Math.max(map.getZoom(), 15));
+      m.openPopup();
+    },
+    clearFound() { if (searchLayer) searchLayer.clearLayers(); },
     setFilter(fn) {
       filterFn = fn;
       if (!ready) return;

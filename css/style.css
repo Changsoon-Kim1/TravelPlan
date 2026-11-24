@@ -82,8 +82,8 @@ main { flex: 1; position: relative; min-height: 0; }
 .course-badge i { font-style: normal; margin-left: 3px; }
 .course-badge.sch { font-size: 12px; line-height: 20px; padding: 0 7px; opacity: 1; border-width: 2px; box-shadow: 0 2px 6px rgba(15,23,42,.35); }
 .course-tag {
-  position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 4px; padding: 1px 7px;
-  background: #fff; border: 1.5px solid; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap;
+  position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 2px; padding: 0 4px;
+  background: rgba(255,255,255,.92); border: 1px solid; border-radius: 4px; font-size: 9px; line-height: 13px; font-weight: 700; letter-spacing: -.3px; white-space: nowrap;
   box-shadow: 0 1px 4px rgba(15,23,42,.25); pointer-events: none;
 }
 
@@ -217,3 +217,28 @@ input[type=checkbox] { width: 18px; height: 18px; }
   border-radius: 12px; font-size: 14px; opacity: 0; pointer-events: none; transition: all .2s; max-width: 92vw; text-align: center;
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); } #toast.err { background: #b91c1c; }
+
+
+/* ---------- 장소 검색 / 일정 핀 ---------- */
+.place-form { pointer-events: auto; display: flex; gap: 6px; }
+.place-form input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-size: 14px; background: rgba(255,255,255,.97); box-shadow: 0 1px 4px rgba(15,23,42,.18); }
+.place-form button { flex: none; border: 0; border-radius: 999px; padding: 0 14px; background: var(--brand); color: #fff; font-weight: 700; font-size: 13px; box-shadow: 0 1px 4px rgba(15,23,42,.18); }
+.place-results { pointer-events: auto; list-style: none; margin: 0; padding: 4px; background: #fff; border-radius: 12px; box-shadow: 0 4px 16px rgba(15,23,42,.25); max-height: 40vh; overflow-y: auto; }
+.place-results.inline { box-shadow: none; border: 1px solid var(--line); margin-top: 6px; max-height: 190px; }
+.place-results li button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 8px; }
+.place-results li button:active, .place-results li button:hover { background: #f1f5f9; }
+.place-results li b { display: block; font-size: 14px; }
+.place-results li small { display: block; color: var(--muted, #64748b); font-size: 12px; }
+.place-results li.none { padding: 10px; font-size: 13px; color: #64748b; }
+.place-sel { margin: 4px 0 6px; font-size: 14px; }
+.lbl { font-weight: 600; font-size: 13px; margin-top: 8px; }
+
+.pin-wrap { background: none; border: 0; }
+.pin { position: relative; transform: translate(-50%, -13px); display: flex; flex-direction: column; align-items: center; }
+.pin-dot { width: 26px; height: 26px; border-radius: 50%; background: #1e293b; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; }
+.pin-dot { font-size: 12px; line-height: 1; }
+.pin-tag { margin-top: 3px; padding: 0 5px; background: #1e293b; color: #fff; border-radius: 4px; font-size: 9.5px; line-height: 14px; font-weight: 700; white-space: nowrap; letter-spacing: -.3px; }
+.pin.found .pin-dot { background: var(--accent, #ea580c); }
+.pin-pop b { font-size: 14px; }
+.pin-act { display: flex; gap: 6px; margin-top: 8px; }
+.btn.danger { color: #b91c1c; }

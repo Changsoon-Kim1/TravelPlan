@@ -45,3 +45,7 @@ node --test tests/core.test.mjs
 
 ## 지도 타일 안내
 OpenStreetMap 타일은 소규모 개인 사용에 적합합니다. 공식 서버가 막히면 자동으로 대체 서버로 전환합니다.
+
+## 장소 검색·핀
+- 지도 위 검색창(OpenStreetMap Nominatim, 결과 없으면 Photon)으로 장소를 찾아 `일정에 추가` → 일정에 장소명·좌표가 저장되고 지도에 핀과 `4/14 15:00` 꼬리표가 표시됩니다. 지도를 길게 누르면 그 위치를 직접 지정할 수 있어요.
+- DB: `trip_events.place/lat/lng` (supabase/schema.sql 맨 아래 마이그레이션).

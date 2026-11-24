@@ -29,7 +29,7 @@
     if (!TPData.canEdit()) { toast('읽기 전용 링크라서 수정할 수 없어요', 'err'); return; }
     const editing = opts.event || null;
     const d = Object.assign(
-      { kind: 'other', title: '', day: S.selectedDay || S.trip.start_date, end_day: '', start_time: '', end_time: '', note: '', course_id: '' },
+      { kind: 'other', title: '', day: S.selectedDay || S.trip.start_date, end_day: '', start_time: '', end_time: '', note: '', course_id: '', place: '', lat: null, lng: null },
       opts.defaults || {}, editing || {});
     const allDay = !d.start_time;
     const kindOpts = Object.keys(KIND).map((k) => '<option value="' + k + '"' + (k === d.kind ? ' selected' : '') + '>' + KIND[k].icon + ' ' + KIND[k].label + '</option>').join('');
@@ -41,6 +41,10 @@
       '<form id="evForm" novalidate>' +
       '<label>종류<select id="fKind">' + kindOpts + '</select></label>' +
       '<label id="rowCourse" ' + (d.kind === 'olle' ? '' : 'hidden') + '>올레 코스<select id="fCourse">' + courseOpts + '</select></label>' +
+      '<div id="rowPlace" ' + (d.kind === 'olle' ? 'hidden' : '') + '><div class="lbl">장소 <small class="muted">(지도에 핀·날짜로 표시)</small></div>' +
+      '<div class="place-sel" id="pSel"></div>' +
+      '<div class="copy-row"><input id="pQ" type="search" enterkeyhint="search" placeholder="장소 검색 (예: 제주 신라호텔)"><button type="button" class="btn" id="pGo">검색</button></div>' +
+      '<ul id="pRes" class="place-results inline" hidden></ul></div>' +
       '<label>제목<input id="fTitle" maxlength="200" value="' + esc(d.title) + '" placeholder="예: 저녁 식사, 렌터카 반납"></label>' +
       '<div class="two"><label>날짜<input type="date" id="fDay" value="' + esc(d.day) + '"></label>' +
       '<label>마지막 날 <small class="muted">(여러 날일 때)</small><input type="date" id="fEndDay" value="' + esc(d.end_day || '') + '"></label></div>' +
@@ -57,7 +61,35 @@
     let autoTitle = d.title && d.course_id ? d.title : '';
     const showErr = (msg) => { const e = f('fErr'); e.textContent = msg; e.hidden = !msg; };
 
-    function syncCourseRow() { f('rowCourse').hidden = f('fKind').value !== 'olle'; }
+    let place = d.place || '', lat = d.lat == null ? null : d.lat, lng = d.lng == null ? null : d.lng, found = [];
+    function renderPlace() {
+      f('pSel').innerHTML = lat == null ? '<span class="muted sm">선택 안 함</span>'
+        : '📍 <b>' + esc(place || '선택한 위치') + '</b> <button type="button" class="btn small" id="pClear">지우기</button>';
+      const c = f('pClear'); if (c) c.addEventListener('click', () => { place = ''; lat = lng = null; renderPlace(); });
+    }
+    renderPlace();
+    async function doPlaceSearch() {
+      const q = f('pQ').value.trim(); if (!q) return;
+      const go = f('pGo'); go.disabled = true; go.textContent = '…';
+      try {
+        found = await TPPlaces.search(q);
+        f('pRes').innerHTML = found.length ? found.map((r, i) => '<li><button type="button" data-i="' + i + '"><b>' + esc(r.name) + '</b><small>' + esc(r.addr) + '</small></button></li>').join('')
+          : '<li class="none">검색 결과가 없어요. 이름을 줄여 보세요. (지도 화면에서 길게 눌러 위치를 고를 수도 있어요)</li>';
+        f('pRes').hidden = false;
+      } catch (err) { showErr(err.message || '검색하지 못했어요'); }
+      go.disabled = false; go.textContent = '검색';
+    }
+    f('pGo').addEventListener('click', doPlaceSearch);
+    f('pQ').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doPlaceSearch(); } });
+    f('pRes').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-i]'); if (!b) return;
+      const r = found[Number(b.dataset.i)];
+      place = r.name; lat = r.lat; lng = r.lng; renderPlace();
+      if (!f('fTitle').value.trim()) f('fTitle').value = r.name;
+      f('pRes').hidden = true; f('pQ').value = '';
+    });
+
+    function syncCourseRow() { const olle = f('fKind').value === 'olle'; f('rowCourse').hidden = !olle; f('rowPlace').hidden = olle; }
     function autoEnd() {
       const c = byId(f('fCourse').value);
       if (!c || endTouched || f('fAllDay').checked || !f('fStart').value) return;
@@ -90,7 +122,8 @@
         kind: f('fKind').value, course_id: f('fKind').value === 'olle' ? (f('fCourse').value || null) : null,
         title: f('fTitle').value.trim(), day: f('fDay').value, end_day: f('fEndDay').value || null,
         start_time: allDayNow ? null : (f('fStart').value || null), end_time: allDayNow ? null : (f('fEnd').value || null),
-        note: f('fNote').value.trim()
+        note: f('fNote').value.trim(),
+        place: f('fKind').value === 'olle' ? null : (place || null), lat: f('fKind').value === 'olle' ? null : lat, lng: f('fKind').value === 'olle' ? null : lng
       };
       if (!ev.title) return showErr('제목을 입력해 주세요.');
       if (!ev.day) return showErr('날짜를 선택해 주세요.');

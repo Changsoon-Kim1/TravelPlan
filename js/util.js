@@ -20,6 +20,12 @@
     if (!ev.start_time) return '종일';
     return ev.end_time ? ev.start_time + '~' + ev.end_time : ev.start_time;
   }
+  // 지도 꼬리표용 짧은 표기: "4/12 10:00~15:00", 여러 날이면 "4/14~4/15"
+  function fmtTag(ev) {
+    const md = (iso) => { const p = TPCore.parseISO(iso); return p.m + '/' + p.d; };
+    if (ev.end_day && ev.end_day !== ev.day) return md(ev.day) + '~' + md(ev.end_day);
+    return md(ev.day) + (ev.start_time ? ' ' + (ev.end_time ? ev.start_time + '~' + ev.end_time : ev.start_time) : '');
+  }
   function todayISO() {
     const d = new Date();
     return TPCore.toISO(d.getFullYear(), d.getMonth() + 1, d.getDate());
@@ -67,5 +73,5 @@
     jejuBus: 'https://bus.jeju.go.kr/'
   };
 
-  window.TPUtil = { $, $$, esc, KIND, WD, fmtDay, fmtTimeRange, todayISO, toast, openModal, closeModal, links };
+  window.TPUtil = { $, $$, esc, KIND, WD, fmtDay, fmtTimeRange, fmtTag, todayISO, toast, openModal, closeModal, links };
 })();

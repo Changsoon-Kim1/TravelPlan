@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>제주 올레길 여행 계획</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="css/style.css?v=202611241259">
+  <link rel="stylesheet" href="css/style.css?v=202611241430">
 </head>
 <body>
   <header id="topbar">
@@ -35,6 +35,11 @@
     <section id="viewMap" class="view on">
       <div id="map" aria-label="제주도 올레길 지도"></div>
       <div id="mapOverlay">
+        <form id="placeForm" class="place-form" role="search" autocomplete="off">
+          <input id="placeQ" type="search" enterkeyhint="search" placeholder="🔍 장소 검색 (예: 제주 신라호텔)" aria-label="장소 검색">
+          <button type="submit" id="placeGo">검색</button>
+        </form>
+        <ul id="placeResults" class="place-results" hidden></ul>
         <div id="filterBar" class="filter-bar" role="group" aria-label="코스 필터"></div>
         <div id="mapNotice" class="map-notice" hidden></div>
       </div>
@@ -66,16 +71,17 @@
   <noscript><p style="padding:16px">이 앱은 JavaScript가 필요합니다.</p></noscript>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="data/courses.js?v=202611241259"></script>
-  <script src="data/anchors.js?v=202611241259"></script>
-  <script src="js/config.js?v=202611241259"></script>
-  <script src="js/core.js?v=202611241259"></script>
-  <script src="js/util.js?v=202611241259"></script>
-  <script src="js/api.js?v=202611241259"></script>
-  <script src="js/map.js?v=202611241259"></script>
-  <script src="js/panel.js?v=202611241259"></script>
-  <script src="js/calendar.js?v=202611241259"></script>
-  <script src="js/dialogs.js?v=202611241259"></script>
-  <script src="js/app.js?v=202611241259"></script>
+  <script src="data/courses.js?v=202611241430"></script>
+  <script src="data/anchors.js?v=202611241430"></script>
+  <script src="js/config.js?v=202611241430"></script>
+  <script src="js/core.js?v=202611241430"></script>
+  <script src="js/util.js?v=202611241430"></script>
+  <script src="js/api.js?v=202611241430"></script>
+  <script src="js/places.js?v=202611241430"></script>
+  <script src="js/map.js?v=202611241430"></script>
+  <script src="js/panel.js?v=202611241430"></script>
+  <script src="js/calendar.js?v=202611241430"></script>
+  <script src="js/dialogs.js?v=202611241430"></script>
+  <script src="js/app.js?v=202611241430"></script>
 </body>
 </html>
