@@ -20,11 +20,16 @@
     if (!ev.start_time) return '종일';
     return ev.end_time ? ev.start_time + '~' + ev.end_time : ev.start_time;
   }
-  // 지도 꼬리표용 짧은 표기: "4/12 10:00~15:00", 여러 날이면 "4/14~4/15"
+  // 지도 꼬리표용 짧은 표기: "4/14 15시", "4/14 10~15시", "4/14 10:30~15시", 여러 날이면 "4/14~4/15"
   function fmtTag(ev) {
     const md = (iso) => { const p = TPCore.parseISO(iso); return p.m + '/' + p.d; };
     if (ev.end_day && ev.end_day !== ev.day) return md(ev.day) + '~' + md(ev.end_day);
-    return md(ev.day) + (ev.start_time ? ' ' + (ev.end_time ? ev.start_time + '~' + ev.end_time : ev.start_time) : '');
+    if (!ev.start_time) return md(ev.day);
+    const tok = (t) => { const [h, m] = t.split(':'); return m === '00' ? String(Number(h)) : Number(h) + ':' + m; };
+    const parts = [ev.start_time, ev.end_time].filter(Boolean).map((t) => t.slice(0, 5));
+    let txt = parts.map(tok).join('~');
+    if (!/:/.test(txt.split('~').pop())) txt += '시';
+    return md(ev.day) + ' ' + txt;
   }
   function todayISO() {
     const d = new Date();
