@@ -22,7 +22,7 @@
   async function thumb(file) {
     try {
       const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-      const k = Math.min(1, 640 / Math.max(bmp.width, bmp.height));
+      const k = Math.min(1, 1000 / Math.max(bmp.width, bmp.height));
       const cv = document.createElement('canvas');
       cv.width = Math.max(1, Math.round(bmp.width * k)); cv.height = Math.max(1, Math.round(bmp.height * k));
       cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
