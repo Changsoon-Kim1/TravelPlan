@@ -233,16 +233,10 @@
     if (c.stay) when = hm(c.stay.t0) + ' ~ ' + hm(c.stay.t1);
     let meta = '';
     if (c.stay) meta += '<span class="stay">⏸ 여기서 <b>' + durShort(c.stay.sec) + '</b> 머물렀어요</span>';
-    else if (c.t0 != null && c.t1 - c.t0 >= 600000) meta += '<span class="stay">📸 ' + durShort((c.t1 - c.t0) / 1000) + ' 동안 찍은 사진</span>';
+
     if (c.ele != null) meta += '<span>⛰ 고도 ' + Math.round(c.ele) + 'm</span>';
     if (track && c.idx != null) {
       meta += '<span>🚶 출발 후 ' + fmtKm(cum[c.idx]) + ' · ' + durShort((track[c.idx].t - track[0].t) / 1000) + '</span>';
-      if (prev && prev.idx != null && c.idx > prev.idx) {
-        const st = C.trackStats(track.slice(prev.idx, c.idx + 1));
-        if (st) meta += '<span class="leg">↳ 이전 장면에서 ' + fmtKm(st.km) + ' · ' + durShort(st.totalSec) + (st.up >= 10 ? ' · ↑' + Math.round(st.up) + 'm' : '') + (st.down >= 10 ? ' ↓' + Math.round(st.down) + 'm' : '') + '</span>';
-      } else if (!prev || prev.idx == null) {
-        /* 첫 장면: 출발 후 정보만 */
-      }
     }
     const warns = [];
     c.photos.forEach((p) => {
@@ -251,13 +245,13 @@
       else if (p.loc.how === 'none' && p.tAdj != null) warns.push('기록 시간 밖이라 위치를 알 수 없어요');
     });
     const uniq = warns.filter((w, i) => warns.indexOf(w) === i);
-    const src = c.photos.map((p) => HOW[p.loc.how]).filter((w, i, a) => a.indexOf(w) === i).join(' · ');
-    const imgs = c.photos.map((p, i) => p.thumb ? '<img class="' + (i === 0 && c.photos.length % 2 === 1 ? 'wide' : '') + '" alt="장면 ' + c.n + ' 사진" src="' + p.thumb.url + '">' : '<div class="noimg muted">미리보기 없음<br>' + esc(p.name) + '</div>').join('');
+    const imgs = c.photos.map((p) => '<div class="it" style="--a:' + (p.thumb ? (p.thumb.w / p.thumb.h).toFixed(3) : '1.333') + '">' +
+      (p.thumb ? '<img alt="장면 ' + c.n + ' 사진" src="' + p.thumb.url + '">' : '<div class="noimg muted">미리보기 없음<br>' + esc(p.name) + '</div>') + '</div>').join('');
     return '<section class="chap"><div class="chead">' + (c.loc ? '<div class="cmap">' + miniSVG(track, chapters, c, pr, hasBg) + '</div>' : '') +
       '<div class="cinfo"><div class="ctitle"><span class="no">' + c.n + '</span><b>' + esc(when) + '</b></div>' + meta +
-      '<div class="src">' + esc(src) + '</div>' + uniq.map((w) => '<div class="warn">' + esc(w) + '</div>').join('') + '</div></div>' +
-      '<div class="memo" contenteditable="true" data-ph="이 장면에 한 줄 메모…" spellcheck="false"></div>' +
-      '<div class="shots n' + Math.min(c.photos.length, 3) + '">' + imgs + '</div></section>';
+      uniq.map((w) => '<div class="warn">' + esc(w) + '</div>').join('') + '</div></div>' +
+      '<button type="button" class="addmemo noprint">✎ 메모 추가</button><div class="memo" contenteditable="true" data-ph="이 장면에 한 줄 메모…" spellcheck="false" hidden></div>' +
+      '<div class="shots ' + (c.photos.length === 1 ? 'n1' : 'nm') + '">' + imgs + '</div></section>';
   }
 
   function buildReport(title, track, photos, pr, bgUrl) {
@@ -340,13 +334,30 @@
 
   function saveHtml(title) {
     const css = $('albumCss').textContent;
-    const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' + esc(title) + '</title><style>' + css + '</style></head><body><div class="wrap">' + $('rp').outerHTML.replace(/ contenteditable="true"/g, '') + '</div></body></html>';
+    const clone = $('rp').cloneNode(true);
+    clone.querySelectorAll('.addmemo').forEach((el) => el.remove());
+    clone.querySelectorAll('.memo').forEach((el) => { if (el.hidden || !el.textContent.trim()) el.remove(); else el.removeAttribute('contenteditable'); });
+    const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' + esc(title) + '</title><style>' + css + '</style></head><body><div class="wrap">' + clone.outerHTML + '</div></body></html>';
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
     a.download = (title.replace(/[\\/:*?"<>|]+/g, '_') || 'album') + '.html';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
+
+  // 메모: '✎ 메모 추가'를 눌러야 입력칸이 열리고, 내용이 없으면 다시 접힌다
+  $('out').addEventListener('click', (e) => {
+    const b = e.target.closest('.addmemo');
+    if (!b) return;
+    const m = b.parentNode.querySelector('.memo');
+    b.hidden = true; m.hidden = false; m.focus();
+  });
+  $('out').addEventListener('focusout', (e) => {
+    const m = e.target.closest && e.target.closest('.memo');
+    if (!m || m.textContent.trim()) return;
+    m.textContent = ''; m.hidden = true;
+    const b = m.parentNode.querySelector('.addmemo'); if (b) b.hidden = false;
+  });
 
   $('make').addEventListener('click', make);
 })();
