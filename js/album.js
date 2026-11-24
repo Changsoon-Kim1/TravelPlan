@@ -333,9 +333,11 @@
       const st = track ? C.trackStats(track) : null;
       const title = $('title').value.trim() || (st ? dayLabel(st.start) + ' 기록' : '사진 앨범');
       $('out').innerHTML = '<div class="bar noprint" style="margin:0 0 10px"><button class="btn primary" id="doPrint" type="button">🖨 PDF로 저장 / 인쇄</button>' +
-        '<button class="btn" id="doSave" type="button">💾 HTML 파일로 저장</button></div>' + buildReport(title, track, photos, pr, bgUrl, bgCredit);
+        '<button class="btn" id="doSave" type="button">💾 HTML 파일로 저장</button>' +
+        '<button class="btn" id="doBlog" type="button">📝 블로그용 내보내기 (ZIP)</button></div>' + buildReport(title, track, photos, pr, bgUrl, bgCredit);
       $('doPrint').onclick = () => window.print();
       $('doSave').onclick = () => saveHtml(title);
+      $('doBlog').onclick = () => saveBlog(title);
       const located = photos.filter((p) => p.loc.how !== 'none').length;
       prog.textContent = '완료: 사진 ' + photos.length + '장 중 위치 확인 ' + located + '장 (사진 GPS ' + photos.filter((p) => p.loc.how === 'photo').length + ' · GPX 맞춤 ' + photos.filter((p) => p.loc.how === 'track' || p.loc.how === 'edge').length + ')';
       $('out').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -355,6 +357,81 @@
     a.download = (title.replace(/[\\/:*?"<>|]+/g, '_') || 'album') + '.html';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
+
+  // ---- 블로그용 내보내기: 지도는 PNG, 사진은 JPG, 글은 txt 로 묶어 ZIP 하나로 (서버 전송 없음) ----
+  const crcT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = crcT[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  function makeZip(files) { // files: [{name, data:Uint8Array}] — 압축 없이 저장(사진·PNG는 이미 압축돼 있음)
+    const enc = new TextEncoder(), parts = [], cd = []; let off = 0;
+    files.forEach((f) => {
+      const nm = enc.encode(f.name), crc = crc32(f.data), sz = f.data.length;
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+      lh.setUint16(10, 0, true); lh.setUint16(12, 0x21, true); lh.setUint32(14, crc, true); lh.setUint32(18, sz, true); lh.setUint32(22, sz, true); lh.setUint16(26, nm.length, true);
+      parts.push(new Uint8Array(lh.buffer), nm, f.data);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(12, 0, true); ch.setUint16(14, 0x21, true);
+      ch.setUint32(16, crc, true); ch.setUint32(20, sz, true); ch.setUint32(24, sz, true); ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+      cd.push(new Uint8Array(ch.buffer), nm);
+      off += 30 + nm.length + sz;
+    });
+    const cdSize = cd.reduce((a, b) => a + b.length, 0), end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cdSize, true); end.setUint32(16, off, true);
+    return new Blob([...parts, ...cd, new Uint8Array(end.buffer)], { type: 'application/zip' });
+  }
+  function dataUrlBytes(u) { const b = atob(u.slice(u.indexOf(',') + 1)), a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
+  function svgToPng(svg, scale) { // 화면의 SVG 한 장을 PNG 그림으로 (배경 지도 정의를 함께 넣는다)
+    return new Promise((resolve) => {
+      const vb = svg.getAttribute('viewBox').split(/\s+/).map(Number), w = Math.round(vb[2] * scale), h = Math.round(vb[3] * scale);
+      const c = svg.cloneNode(true);
+      c.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); c.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+      c.setAttribute('width', w); c.setAttribute('height', h); c.removeAttribute('class');
+      const bg = document.getElementById('bgmap');
+      if (bg && c.querySelector('use')) c.insertAdjacentHTML('afterbegin', '<defs>' + bg.outerHTML + '</defs>');
+      const img = new Image();
+      img.onload = () => {
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        const g = cv.getContext('2d'); g.fillStyle = '#f8fafc'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+        try { resolve(dataUrlBytes(cv.toDataURL('image/png'))); } catch (e) { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(c));
+    });
+  }
+  async function saveBlog(title) {
+    const prog = $('progress'), pad = (n) => String(n).padStart(2, '0'), enc = new TextEncoder(), files = [], rp = $('rp');
+    let txt = title + '\r\n' + (rp.querySelector('.rp-sub') || {}).textContent + '\r\n\r\n';
+    const stats = rp.querySelector('.stats');
+    if (stats) txt += Array.from(stats.children).map((d) => d.innerText.replace(/\s*\n\s*/g, ' ')).join('\r\n') + '\r\n\r\n';
+    prog.textContent = '지도 그림 만드는 중…';
+    const ov = rp.querySelector('svg.map');
+    if (ov) { const b = await svgToPng(ov, 1.5); if (b) { files.push({ name: '00_전체지도.png', data: b }); txt += '[사진 00_전체지도.png]\r\n\r\n'; } }
+    const el = rp.querySelector('svg.elev');
+    if (el && el.getAttribute('viewBox')) { const b = await svgToPng(el, 1.5); if (b) files.push({ name: '00_고도그래프.png', data: b }); }
+    const chaps = Array.from(rp.querySelectorAll('.chap'));
+    for (let i = 0; i < chaps.length; i++) {
+      const ch = chaps[i], n = i + 1;
+      prog.textContent = '장면 ' + n + '/' + chaps.length + ' 준비 중…';
+      const tt = ((ch.querySelector('.ctitle .no') || {}).textContent || n) + ' · ' + ((ch.querySelector('.ctitle b') || {}).textContent || ''), metas = Array.from(ch.querySelectorAll('.cinfo > span, .cinfo .warn')).map((x) => x.textContent.trim());
+      txt += '■ 장면 ' + tt.trim() + '\r\n' + metas.join('\r\n') + (metas.length ? '\r\n' : '');
+      const memo = ch.querySelector('.memo:not([hidden])');
+      if (memo && memo.textContent.trim()) txt += memo.textContent.trim() + '\r\n';
+      const mini = ch.querySelector('svg.mini');
+      if (mini) { const b = await svgToPng(mini, 2); if (b) { const nm = pad(n) + '_지도.png'; files.push({ name: nm, data: b }); txt += '[사진 ' + nm + ']\r\n'; } }
+      ch.querySelectorAll('.shots img').forEach((im, k) => { const nm = pad(n) + '_사진' + (k + 1) + '.jpg'; files.push({ name: nm, data: dataUrlBytes(im.src) }); txt += '[사진 ' + nm + ']\r\n'; });
+      txt += '\r\n';
+    }
+    const credit = (rp.querySelector('.foot') || {}).textContent;
+    files.unshift({ name: '00_글.txt', data: enc.encode('﻿' + txt + '(지도 출처: 일반 지도 © OpenStreetMap contributors / 지형 지도 © OpenTopoMap, SRTM — 블로그에 지도 이미지를 올릴 때 함께 적어 주세요)\r\n') });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(makeZip(files));
+    a.download = (title.replace(/[\\/:*?"<>|]+/g, '_') || 'album') + '_블로그용.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    prog.textContent = '블로그용 ZIP을 만들었어요 (' + files.length + '개 파일)';
+    window.__blogFiles = files.map((f) => f.name);
   }
 
   // 메모: '✎ 메모 추가'를 눌러야 입력칸이 열리고, 내용이 없으면 다시 접힌다
