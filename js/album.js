@@ -333,9 +333,11 @@
       const st = track ? C.trackStats(track) : null;
       const title = $('title').value.trim() || (st ? dayLabel(st.start) + ' 기록' : '사진 앨범');
       $('out').innerHTML = '<div class="bar noprint" style="margin:0 0 10px"><button class="btn primary" id="doPrint" type="button">🖨 PDF로 저장 / 인쇄</button>' +
-        '<button class="btn" id="doSave" type="button">💾 HTML 파일로 저장</button></div>' + buildReport(title, track, photos, pr, bgUrl, bgCredit);
+        '<button class="btn" id="doSave" type="button">💾 HTML 파일로 저장</button>' +
+        '<button class="btn" id="doShare" type="button">📤 사진 공유 준비 (블로그 앱으로)</button><span id="shareBtns"></span></div>' + buildReport(title, track, photos, pr, bgUrl, bgCredit);
       $('doPrint').onclick = () => window.print();
       $('doSave').onclick = () => saveHtml(title);
+      $('doShare').onclick = () => prepareShare();
       const located = photos.filter((p) => p.loc.how !== 'none').length;
       prog.textContent = '완료: 사진 ' + photos.length + '장 중 위치 확인 ' + located + '장 (사진 GPS ' + photos.filter((p) => p.loc.how === 'photo').length + ' · GPX 맞춤 ' + photos.filter((p) => p.loc.how === 'track' || p.loc.how === 'edge').length + ')';
       $('out').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -357,6 +359,64 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
 
+
+  // ---- 공유: 사진·지도 이미지를 휴대폰 공유 창으로 보낸다 (서버 전송 없음). 되돌리기: git tag album-before-share ----
+  function dataUrlBytes(u) { const b = atob(u.slice(u.indexOf(',') + 1)), a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
+  function svgToPng(svg, scale) { // 화면의 SVG 한 장을 PNG 그림으로 (배경 지도 정의를 함께 넣는다)
+    return new Promise((resolve) => {
+      const vb = svg.getAttribute('viewBox').split(/\s+/).map(Number), w = Math.round(vb[2] * scale), h = Math.round(vb[3] * scale);
+      const c = svg.cloneNode(true);
+      c.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); c.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+      c.setAttribute('width', w); c.setAttribute('height', h); c.removeAttribute('class');
+      const bg = document.getElementById('bgmap');
+      if (bg && c.querySelector('use')) c.insertAdjacentHTML('afterbegin', '<defs>' + bg.outerHTML + '</defs>');
+      const img = new Image();
+      img.onload = () => {
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        const g = cv.getContext('2d'); g.fillStyle = '#f8fafc'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+        try { resolve(dataUrlBytes(cv.toDataURL('image/png'))); } catch (e) { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(c));
+    });
+  }
+
+  async function prepareShare() {
+    const prog = $('progress'), rp = $('rp'), pad = (n) => String(n).padStart(2, '0'), box = $('shareBtns'), main = $('doShare');
+    main.disabled = true; box.innerHTML = '';
+    const items = []; // {name, blob}
+    const add = (name, bytes, type) => items.push({ name, blob: new Blob([bytes], { type }) });
+    try {
+      prog.textContent = '지도 이미지 만드는 중…';
+      const ov = rp.querySelector('svg.map');
+      if (ov) { const b = await svgToPng(ov, 1.5); if (b) add('00_전체지도.png', b, 'image/png'); }
+      const chaps = Array.from(rp.querySelectorAll('.chap'));
+      for (let i = 0; i < chaps.length; i++) {
+        const ch = chaps[i], n = pad(i + 1);
+        prog.textContent = '장면 ' + (i + 1) + '/' + chaps.length + ' 준비 중…';
+        const mini = ch.querySelector('svg.mini');
+        if (mini) { const b = await svgToPng(mini, 2); if (b) add(n + '_지도.png', b, 'image/png'); }
+        ch.querySelectorAll('.shots img').forEach((im, k) => add(n + '_사진' + (k + 1) + '.jpg', dataUrlBytes(im.src), 'image/jpeg'));
+      }
+    } catch (e) { prog.textContent = '준비 중 오류: ' + e.message; main.disabled = false; return; }
+    const files = items.map((x) => new File([x.blob], x.name, { type: x.blob.type }));
+    window.__shareFiles = files.map((f) => f.name);
+    const can = navigator.canShare && navigator.canShare({ files: files.slice(0, 1) });
+    if (!can) { prog.textContent = '이 브라우저는 파일 공유를 지원하지 않아요. (안드로이드 크롬에서 열어 주세요)'; main.disabled = false; return; }
+    const SIZE = 20;
+    for (let i = 0; i < files.length; i += SIZE) {
+      const part = files.slice(i, i + SIZE), b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn primary'; b.style.marginLeft = '6px';
+      b.textContent = '📤 공유 ' + (i + 1) + '~' + (i + part.length) + ' / ' + files.length;
+      b.onclick = async () => {
+        try { await navigator.share({ files: part }); b.textContent = '✓ ' + b.textContent.slice(2); }
+        catch (e) { if (e && e.name !== 'AbortError') prog.textContent = '공유 실패: ' + (e.message || e.name) + ' — 개수를 줄여 다시 해 보세요.'; }
+      };
+      box.appendChild(b);
+    }
+    prog.textContent = '준비 완료: 이미지 ' + files.length + '개. 아래 공유 버튼을 눌러 블로그 앱을 고르세요. (' + Math.ceil(files.length / SIZE) + '번에 나눠 보내요)';
+    main.disabled = false;
+  }
 
   // 메모: '✎ 메모 추가'를 눌러야 입력칸이 열리고, 내용이 없으면 다시 접힌다
   $('out').addEventListener('click', (e) => {
