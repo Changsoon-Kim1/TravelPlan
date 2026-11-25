@@ -48,7 +48,7 @@
     photo.loc = out;
   }
 
-  // ---- 장면(챕터) 묶기: 첫 사진에서 100m 넘게 떨어지면 새 장면(위치 모르는 사진만 5분 간격) ----
+  // ---- 장면(챕터) 묶기: 첫 사진에서 200m 넘게 떨어지면 새 장면(위치 모르는 사진만 5분 간격) ----
   function chaptersOf(photos, track, stays) {
     const list = [];
     let cur = null;
@@ -58,9 +58,9 @@
       const lastP = cur && cur.photos[cur.photos.length - 1];
       let split = !cur || !hasT || cur.noTime;
       if (!split && lastP) {
-        // 위치를 아는 사진은 거리로만 나눈다: 장면의 첫 사진에서 100m 넘으면 새 장면(시간이 길어도 같은 자리면 같은 장면).
+        // 위치를 아는 사진은 거리로만 나눈다: 장면의 첫 사진에서 200m 넘으면 새 장면(시간이 길어도 같은 자리면 같은 장면).
         // 위치를 모르는 사진만 시간으로 나눈다: 앞 사진과 5분 넘게 벌어지면 새 장면.
-        if (here && cur.loc) { if (C.haversineKm([cur.loc.lat, cur.loc.lon], [here.lat, here.lon]) > 0.1) split = true; }
+        if (here && cur.loc) { if (C.haversineKm([cur.loc.lat, cur.loc.lon], [here.lat, here.lon]) > 0.2) split = true; }
         else if (p.tAdj - lastP.tAdj > 5 * 60000) split = true;
       }
       if (hasT && cur && cur.noTime) split = true;
