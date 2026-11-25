@@ -362,7 +362,7 @@
 
   // ---- 공유: 사진·지도 이미지를 휴대폰 공유 창으로 보낸다 (서버 전송 없음). 되돌리기: git tag album-before-share ----
   function dataUrlBytes(u) { const b = atob(u.slice(u.indexOf(',') + 1)), a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
-  function svgToPng(svg, scale) { // 화면의 SVG 한 장을 PNG 그림으로 (배경 지도 정의를 함께 넣는다)
+  function svgToCanvas(svg, scale) { // 화면의 SVG 한 장을 그림으로 (배경 지도 정의를 함께 넣는다)
     return new Promise((resolve) => {
       const vb = svg.getAttribute('viewBox').split(/\s+/).map(Number), w = Math.round(vb[2] * scale), h = Math.round(vb[3] * scale);
       const c = svg.cloneNode(true);
@@ -374,13 +374,53 @@
       img.onload = () => {
         const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
         const g = cv.getContext('2d'); g.fillStyle = '#f8fafc'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
-        try { resolve(dataUrlBytes(cv.toDataURL('image/png'))); } catch (e) { resolve(null); }
+        resolve(cv);
       };
       img.onerror = () => resolve(null);
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(c));
     });
   }
 
+  const canvasJpg = (cv) => dataUrlBytes(cv.toDataURL('image/jpeg', 0.86));
+  function wrapLines(g, text, maxW) { // 글자 단위로 줄바꿈(한글은 띄어쓰기가 적어서)
+    const out = []; let cur = '';
+    for (const ch of text) { if (g.measureText(cur + ch).width > maxW && cur) { out.push(cur); cur = ch; } else cur += ch; }
+    if (cur) out.push(cur); return out;
+  }
+  // 장면 카드: 왼쪽 2/3 지도 + 오른쪽 1/3 시간·고도 내용(+메모) 을 한 장의 그림으로
+  async function sceneCard(ch, n) {
+    const mini = ch.querySelector('svg.mini'); if (!mini) return null;
+    const W = 1080, mw = Math.round(W * 0.66) - 8, pad = 14;
+    const m = await svgToCanvas(mini, 2.2); if (!m) return null;
+    const mh = Math.round(m.height * mw / m.width), ix = mw + pad * 2, iw = W - ix - pad;
+    const rows = []; // {t, size, bold, color}
+    const tm = (ch.querySelector('.ctitle b') || {}).textContent || '';
+    ch.querySelectorAll('.cinfo > span, .cinfo .warn').forEach((x) => {
+      const cls = x.className || '';
+      rows.push({ t: x.textContent.replace(/\s+/g, ' ').trim(), size: 30, color: /stay/.test(cls) ? '#c2410c' : /warn/.test(cls) ? '#b45309' : '#334155' });
+    });
+    const memoEl = ch.querySelector('.memo:not([hidden])'), memo = memoEl && memoEl.textContent.trim();
+    const cv = document.createElement('canvas'); cv.width = W; const g0 = cv.getContext('2d');
+    // 높이 계산
+    g0.font = 'bold 40px sans-serif'; const tl = wrapLines(g0, tm, iw - 70);
+    let y = pad + 8 + tl.length * 48 + 10; const laid = [];
+    rows.forEach((r) => { g0.font = r.size + 'px sans-serif'; const ls = wrapLines(g0, r.t, iw); laid.push({ r, ls, y }); y += ls.length * 40 + 8; });
+    g0.font = '32px sans-serif'; const ml = memo ? wrapLines(g0, memo, W - pad * 4) : [];
+    const top = Math.max(mh + pad * 2, y + pad), memoH = memo ? ml.length * 44 + 36 : 0;
+    cv.height = top + memoH; const g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, cv.height); g.textBaseline = 'top';
+    g.drawImage(m, pad, pad, mw, mh);
+    g.strokeStyle = '#e2e8f0'; g.lineWidth = 2; g.strokeRect(pad, pad, mw, mh);
+    g.fillStyle = '#ea580c'; g.beginPath(); g.arc(ix + 26, pad + 8 + 26, 26, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#fff'; g.font = 'bold 30px sans-serif'; g.textAlign = 'center'; g.fillText(String(n), ix + 26, pad + 8 + 11); g.textAlign = 'left';
+    g.fillStyle = '#0f172a'; g.font = 'bold 40px sans-serif'; tl.forEach((l, i) => g.fillText(l, ix + 64, pad + 8 + i * 48 + 4));
+    laid.forEach((o) => { g.fillStyle = o.r.color; g.font = o.r.size + 'px sans-serif'; o.ls.forEach((l, i) => g.fillText(l, ix, o.y + i * 40)); });
+    if (memo) {
+      g.fillStyle = '#fffbeb'; g.fillRect(pad, top, W - pad * 2, memoH - 8);
+      g.fillStyle = '#1e293b'; g.font = '32px sans-serif'; ml.forEach((l, i) => g.fillText(l, pad * 2, top + 18 + i * 44));
+    }
+    return cv;
+  }
   async function prepareShare() {
     const prog = $('progress'), rp = $('rp'), pad = (n) => String(n).padStart(2, '0'), box = $('shareBtns'), main = $('doShare');
     main.disabled = true; box.innerHTML = '';
@@ -389,13 +429,13 @@
     try {
       prog.textContent = '지도 이미지 만드는 중…';
       const ov = rp.querySelector('svg.map');
-      if (ov) { const b = await svgToPng(ov, 1.5); if (b) add('00_전체지도.png', b, 'image/png'); }
+      if (ov) { const c = await svgToCanvas(ov, 1.6); if (c) add('00_전체지도.jpg', canvasJpg(c), 'image/jpeg'); }
       const chaps = Array.from(rp.querySelectorAll('.chap'));
       for (let i = 0; i < chaps.length; i++) {
         const ch = chaps[i], n = pad(i + 1);
         prog.textContent = '장면 ' + (i + 1) + '/' + chaps.length + ' 준비 중…';
-        const mini = ch.querySelector('svg.mini');
-        if (mini) { const b = await svgToPng(mini, 2); if (b) add(n + '_지도.png', b, 'image/png'); }
+        const card = await sceneCard(ch, i + 1);
+        if (card) add(n + '_장면.jpg', canvasJpg(card), 'image/jpeg');
         ch.querySelectorAll('.shots img').forEach((im, k) => add(n + '_사진' + (k + 1) + '.jpg', dataUrlBytes(im.src), 'image/jpeg'));
       }
     } catch (e) { prog.textContent = '준비 중 오류: ' + e.message; main.disabled = false; return; }
@@ -403,25 +443,22 @@
     window.__shareFiles = files.map((f) => f.name);
     const can = navigator.canShare && navigator.canShare({ files: files.slice(0, 1) });
     if (!can) { prog.textContent = '이 브라우저는 파일 공유를 지원하지 않아요. (안드로이드 크롬에서 열어 주세요)'; main.disabled = false; return; }
-    const SIZE = 8;
-    for (let i = 0; i < files.length; i += SIZE) {
-      const part = files.slice(i, i + SIZE), b = document.createElement('button');
-      b.type = 'button'; b.className = 'btn primary'; b.style.marginLeft = '6px';
-      b.textContent = '📤 공유 ' + (i + 1) + '~' + (i + part.length) + ' / ' + files.length;
+    // 한 글에 다 올리려면 한 번에 보내야 하므로 전체 1번이 기본. 실패할 때만 나눠 보내기 버튼을 보여 준다.
+    const mk = (label, part, primary) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn' + (primary ? ' primary' : ''); b.style.marginLeft = '6px'; b.textContent = label;
       b.onclick = async () => {
-        const tryShare = async (fs) => { try { await navigator.share({ files: fs }); return null; } catch (e) { return e; } };
-        let e = await tryShare(part);
-        if (!e) { b.textContent = '✓ ' + b.textContent.slice(2); return; }
-        if (e.name === 'AbortError') return;
-        // 실패 원인 구분: 1장만 보내 본다 (개수·용량 문제인지, 이 화면 자체가 공유를 막는지)
-        const e1 = await tryShare(part.slice(0, 1));
-        const env = (window.isSecureContext ? 'https' : '보안 연결 아님') + ' · ' + location.protocol;
-        if (!e1) prog.textContent = '여러 장은 거부됐지만 1장은 공유돼요(' + e.name + '). 묶음을 더 작게 나눠야 해요.';
-        else if (e1.name !== 'AbortError') prog.textContent = '공유 실패(' + e.name + '): 1장도 안 돼요. 이 화면이 공유를 막는 것 같아요 [' + env + ']. 주소창이 https://changsoon-kim1.github.io/… 인 크롬에서 열었는지 확인해 주세요.';
+        try { await navigator.share({ files: part }); b.textContent = '✓ ' + label.slice(2); return; }
+        catch (e) {
+          if (e && e.name === 'AbortError') return;
+          prog.textContent = '한 번에 보내기가 거부됐어요(' + (e && e.name) + '). 아래 "나눠 보내기"로 시도해 보세요.';
+          if (!box.querySelector('.split')) for (let i = 0; i < files.length; i += 8) { const sb = mk('📤 나눠 보내기 ' + (i + 1) + '~' + Math.min(i + 8, files.length), files.slice(i, i + 8), false); sb.classList.add('split'); box.appendChild(sb); }
+        }
       };
-      box.appendChild(b);
-    }
-    prog.textContent = '준비 완료: 이미지 ' + files.length + '개. 아래 공유 버튼을 눌러 블로그 앱을 고르세요. (' + Math.ceil(files.length / SIZE) + '번에 나눠 보내요)';
+      return b;
+    };
+    box.appendChild(mk('📤 전체 공유 (' + files.length + '장)', files, true));
+    prog.textContent = '준비 완료: 이미지 ' + files.length + '개. \'전체 공유\'를 눌러 블로그 앱을 고르세요. 한 번에 올려야 같은 글에 들어가요.';
     main.disabled = false;
   }
 
