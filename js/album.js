@@ -238,7 +238,6 @@
     let when = c.t0 == null ? '시각 모름' : (c.t1 !== c.t0 && hm(c.t1) !== hm(c.t0) ? hm(c.t0) + ' ~ ' + hm(c.t1) : hm(c.t0));
     if (c.stay) when = hm(c.stay.t0) + ' ~ ' + hm(c.stay.t1);
     let meta = '';
-    if (c.stay) meta += '<span class="stay">⏸ 여기서 <b>' + durShort(c.stay.sec) + '</b> 머물렀어요</span>';
 
     if (c.ele != null) meta += '<span>⛰ 고도 ' + Math.round(c.ele) + 'm</span>';
     if (track && c.idx != null) {
