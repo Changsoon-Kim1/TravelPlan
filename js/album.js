@@ -443,22 +443,33 @@
     window.__shareFiles = files.map((f) => f.name);
     const can = navigator.canShare && navigator.canShare({ files: files.slice(0, 1) });
     if (!can) { prog.textContent = '이 브라우저는 파일 공유를 지원하지 않아요. (안드로이드 크롬에서 열어 주세요)'; main.disabled = false; return; }
-    // 한 글에 다 올리려면 한 번에 보내야 하므로 전체 1번이 기본. 실패할 때만 나눠 보내기 버튼을 보여 준다.
-    const mk = (label, part, primary) => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'btn' + (primary ? ' primary' : ''); b.style.marginLeft = '6px'; b.textContent = label;
-      b.onclick = async () => {
-        try { await navigator.share({ files: part }); b.textContent = '✓ ' + label.slice(2); return; }
-        catch (e) {
-          if (e && e.name === 'AbortError') return;
-          prog.textContent = '한 번에 보내기가 거부됐어요(' + (e && e.name) + '). 아래 "나눠 보내기"로 시도해 보세요.';
-          if (!box.querySelector('.split')) for (let i = 0; i < files.length; i += 8) { const sb = mk('📤 나눠 보내기 ' + (i + 1) + '~' + Math.min(i + 8, files.length), files.slice(i, i + 8), false); sb.classList.add('split'); box.appendChild(sb); }
-        }
-      };
-      return b;
+    // 크롬은 한 번에 공유할 수 있는 파일 수를 제한한다(약 10개). 그래서 ① 전체를 기기에 저장해 블로그 앱에서 한꺼번에 고르거나 ② 10장씩 공유한다.
+    const slug = (($('title').value || 'album').replace(/[\\/:*?"<>|\s]+/g, '_')).slice(0, 20);
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button'; saveBtn.className = 'btn primary'; saveBtn.style.marginLeft = '6px';
+    saveBtn.textContent = '📥 이미지 ' + files.length + '장 기기에 저장';
+    saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      for (let i = 0; i < files.length; i++) {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(files[i]); a.download = slug + '_' + files[i].name;
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 20000);
+        prog.textContent = '저장 중… ' + (i + 1) + '/' + files.length;
+        await new Promise((r) => setTimeout(r, 450));
+      }
+      prog.textContent = '저장 완료: ' + files.length + '장 (다운로드 폴더). 블로그 앱 사진 추가에서 갤러리의 "다운로드" 앨범을 열어 한꺼번에 고르세요.';
+      saveBtn.disabled = false;
     };
-    box.appendChild(mk('📤 전체 공유 (' + files.length + '장)', files, true));
-    prog.textContent = '준비 완료: 이미지 ' + files.length + '개. \'전체 공유\'를 눌러 블로그 앱을 고르세요. 한 번에 올려야 같은 글에 들어가요.';
+    box.appendChild(saveBtn);
+    for (let i = 0; i < files.length; i += 10) {
+      const part = files.slice(i, i + 10), b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn'; b.style.marginLeft = '6px'; b.textContent = '📤 공유 ' + (i + 1) + '~' + (i + part.length);
+      b.onclick = async () => {
+        try { await navigator.share({ files: part }); b.textContent = '✓ ' + b.textContent.slice(2); }
+        catch (e) { if (e && e.name !== 'AbortError') prog.textContent = '공유 실패(' + (e && e.name) + ')'; }
+      };
+      box.appendChild(b);
+    }
+    prog.textContent = '준비 완료: 이미지 ' + files.length + '장. 같은 글에 다 올리려면 \'기기에 저장\'을 누른 뒤 블로그 앱에서 한꺼번에 고르세요. (공유 창은 한 번에 10장까지만 돼요)';
     main.disabled = false;
   }
 
