@@ -188,7 +188,7 @@
   // 장면별 작은 지도: 전체 지도를 이 장면 주변으로 잘라서 보여 준다. 지금까지 걸은 길은 진하게, 앞으로 갈 길은 연하게.
   function miniSVG(track, chapters, c, pr, hasBg) {
     if (!pr || !c.loc) return '';
-    const cw = pr.W * 0.55, ch = pr.H * 0.55;
+    const cw = pr.W * 0.8, ch = pr.H * 0.8;
     let x = +pr.X(c.loc.lon) - cw / 2, y = +pr.Y(c.loc.lat) - ch / 2;
     x = Math.max(0, Math.min(pr.W - cw, x)); y = Math.max(0, Math.min(pr.H - ch, y));
     let h = '<svg class="mini" viewBox="' + x.toFixed(1) + ' ' + y.toFixed(1) + ' ' + cw.toFixed(1) + ' ' + ch.toFixed(1) + '" role="img" aria-label="장면 ' + c.n + ' 위치">' + (hasBg ? bgUse(pr) : '<rect x="0" y="0" width="' + pr.W + '" height="' + pr.H + '" fill="#f8fafc"/>');
@@ -390,7 +390,7 @@
   // 장면 카드: 왼쪽 2/3 지도 + 오른쪽 1/3 시간·고도 내용(+메모) 을 한 장의 그림으로
   async function sceneCard(ch, n) {
     const mini = ch.querySelector('svg.mini'); if (!mini) return null;
-    const W = 1440, mw = Math.round(W * 0.66) - 8, pad = 18;
+    const W = 1440, mw = Math.round(W * 0.56) - 8, pad = 18;
     const m = await svgToCanvas(mini, 3); if (!m) return null;
     const mh = Math.round(m.height * mw / m.width), ix = mw + pad * 2, iw = W - ix - pad;
     const rows = []; // {t, size, bold, color}

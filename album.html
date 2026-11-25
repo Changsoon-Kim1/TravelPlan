@@ -34,7 +34,7 @@ svg.map, svg.elev { width: 100%; height: auto; display: block; background: #f8fa
 .story { margin-top: 20px; }
 .chap { position: relative; margin: 0 0 18px; padding: 0; break-inside: avoid; }
 .chead { display: flex; gap: 10px; align-items: stretch; }
-.cmap { flex: 0 0 66%; max-width: 66%; }
+.cmap { flex: 0 0 56%; max-width: 56%; }
 .mini { width: 100%; height: auto; display: block; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; }
 .cinfo { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
 .cinfo span { display: block; color: #334155; }
@@ -62,7 +62,7 @@ svg.map, svg.elev { width: 100%; height: auto; display: block; background: #f8fa
 <body>
 <div class="wrap">
   <div class="card noprint" id="setup">
-    <h1>📸 여행 앨범 리포트 <small id="ver" style="font-size:13px;font-weight:500;color:var(--muted)">(v0.04)</small></h1>
+    <h1>📸 여행 앨범 리포트 <small id="ver" style="font-size:13px;font-weight:500;color:var(--muted)">(v0.05)</small></h1>
     <div class="muted sm">하루 GPX 기록과 사진을 시간으로 맞춰, 걸은 길 위에 사진을 올린 리포트를 만들어요.</div>
     <div class="privacy">🔒 사진과 GPX는 <b>이 기기의 브라우저 안에서만</b> 처리돼요. 서버로 보내거나 저장하지 않아요. 만든 리포트는 PDF나 HTML 파일로 내 기기에 저장해요.<br>🗺 <b>배경 지도</b>를 켜면 지도 조각(타일)만 OpenStreetMap에서 받아요. 이때 지도 구역의 좌표는 전달되지만 사진·GPX 내용은 나가지 않아요.</div>
     <label for="gpxFile">① GPX 기록 <span class="muted">(하루치 1개, 없어도 돼요)</span></label>
@@ -86,8 +86,8 @@ svg.map, svg.elev { width: 100%; height: auto; display: block; background: #f8fa
   </div>
   <div id="out"></div>
 </div>
-<script src="js/core.js?v=202611251018"></script>
-<script src="js/exif.js?v=202611251018"></script>
-<script src="js/album.js?v=202611251018"></script>
+<script src="js/core.js?v=202611251019"></script>
+<script src="js/exif.js?v=202611251019"></script>
+<script src="js/album.js?v=202611251019"></script>
 </body>
 </html>
