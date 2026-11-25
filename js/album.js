@@ -403,14 +403,21 @@
     window.__shareFiles = files.map((f) => f.name);
     const can = navigator.canShare && navigator.canShare({ files: files.slice(0, 1) });
     if (!can) { prog.textContent = '이 브라우저는 파일 공유를 지원하지 않아요. (안드로이드 크롬에서 열어 주세요)'; main.disabled = false; return; }
-    const SIZE = 20;
+    const SIZE = 8;
     for (let i = 0; i < files.length; i += SIZE) {
       const part = files.slice(i, i + SIZE), b = document.createElement('button');
       b.type = 'button'; b.className = 'btn primary'; b.style.marginLeft = '6px';
       b.textContent = '📤 공유 ' + (i + 1) + '~' + (i + part.length) + ' / ' + files.length;
       b.onclick = async () => {
-        try { await navigator.share({ files: part }); b.textContent = '✓ ' + b.textContent.slice(2); }
-        catch (e) { if (e && e.name !== 'AbortError') prog.textContent = '공유 실패: ' + (e.message || e.name) + ' — 개수를 줄여 다시 해 보세요.'; }
+        const tryShare = async (fs) => { try { await navigator.share({ files: fs }); return null; } catch (e) { return e; } };
+        let e = await tryShare(part);
+        if (!e) { b.textContent = '✓ ' + b.textContent.slice(2); return; }
+        if (e.name === 'AbortError') return;
+        // 실패 원인 구분: 1장만 보내 본다 (개수·용량 문제인지, 이 화면 자체가 공유를 막는지)
+        const e1 = await tryShare(part.slice(0, 1));
+        const env = (window.isSecureContext ? 'https' : '보안 연결 아님') + ' · ' + location.protocol;
+        if (!e1) prog.textContent = '여러 장은 거부됐지만 1장은 공유돼요(' + e.name + '). 묶음을 더 작게 나눠야 해요.';
+        else if (e1.name !== 'AbortError') prog.textContent = '공유 실패(' + e.name + '): 1장도 안 돼요. 이 화면이 공유를 막는 것 같아요 [' + env + ']. 주소창이 https://changsoon-kim1.github.io/… 인 크롬에서 열었는지 확인해 주세요.';
       };
       box.appendChild(b);
     }
