@@ -390,7 +390,7 @@
   // 장면 카드: 왼쪽 2/3 지도 + 오른쪽 1/3 시간·고도 내용(+메모) 을 한 장의 그림으로
   async function sceneCard(ch, n) {
     const mini = ch.querySelector('svg.mini'); if (!mini) return null;
-    const W = 1440, mw = Math.round(W * 0.56) - 8, pad = 18;
+    const W = 1440, mw = Math.round(W * 0.48) - 8, pad = 18;
     const m = await svgToCanvas(mini, 3); if (!m) return null;
     const mh = Math.round(m.height * mw / m.width), ix = mw + pad * 2, iw = W - ix - pad;
     const rows = []; // {t, size, bold, color}
@@ -421,10 +421,29 @@
     }
     return cv;
   }
+  // 블로그가 20MB 넘는 파일을 거부하므로, 넘는 사진만 화질을 조금씩 낮춰 19MB 이하로 다시 저장한다(나머지는 원본 그대로)
+  async function fitUnder(file, limit) {
+    if (file.size <= limit) return file;
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    let k = 1;
+    for (let round = 0; round < 6; round++) {
+      const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+      cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+      for (const q of [0.95, 0.9, 0.85, 0.8, 0.7]) {
+        const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', q));
+        if (blob && blob.size <= limit) { if (bmp.close) bmp.close(); return new File([blob], file.name, { type: 'image/jpeg' }); }
+      }
+      k *= 0.85;
+    }
+    if (bmp.close) bmp.close();
+    return file;
+  }
+  window.__fitUnder = fitUnder;
   async function prepareShare() {
     const prog = $('progress'), rp = $('rp'), pad = (n) => String(n).padStart(2, '0'), box = $('shareBtns'), main = $('doShare');
     main.disabled = true; box.innerHTML = '';
     const items = []; // {name, blob}
+    window.__fitLimit = 19 * 1024 * 1024;
     const add = (name, bytes, type) => items.push({ name, blob: new Blob([bytes], { type }) });
     try {
       prog.textContent = '지도 이미지 만드는 중…';
@@ -436,7 +455,12 @@
         prog.textContent = '장면 ' + (i + 1) + '/' + chaps.length + ' 준비 중…';
         const card = await sceneCard(ch, i + 1);
         if (card) add(n + '_장면.jpg', canvasJpg(card), 'image/jpeg');
-        ch.querySelectorAll('.shots img').forEach((im, k) => { const of = window.__photoFiles && window.__photoFiles[im.dataset.pid]; if (of) add(n + '_사진' + (k + 1) + '.jpg', of, of.type || 'image/jpeg'); else add(n + '_사진' + (k + 1) + '.jpg', dataUrlBytes(im.src), 'image/jpeg'); }); // 사진은 원본 파일 그대로
+        const imgs = Array.from(ch.querySelectorAll('.shots img'));
+        for (let k = 0; k < imgs.length; k++) {
+          const im = imgs[k], nm = n + '_사진' + (k + 1) + '.jpg', of = window.__photoFiles && window.__photoFiles[im.dataset.pid];
+          if (of) { let f = of; try { f = await fitUnder(of, 19 * 1024 * 1024); } catch (e) { f = of; } add(nm, f, f.type || 'image/jpeg'); } // 사진은 원본 그대로(20MB 넘는 것만 줄임)
+          else add(nm, dataUrlBytes(im.src), 'image/jpeg');
+        }
       }
     } catch (e) { prog.textContent = '준비 중 오류: ' + e.message; main.disabled = false; return; }
     const files = items.map((x) => new File([x.blob], x.name, { type: x.blob.type }));
