@@ -252,7 +252,7 @@
     });
     const uniq = warns.filter((w, i) => warns.indexOf(w) === i);
     const imgs = c.photos.map((p) => '<div class="it" style="--a:' + (p.thumb ? (p.thumb.w / p.thumb.h).toFixed(3) : '1.333') + '">' +
-      (p.thumb ? '<img alt="장면 ' + c.n + ' 사진" src="' + p.thumb.url + '">' : '<div class="noimg muted">미리보기 없음<br>' + esc(p.name) + '</div>') + '</div>').join('');
+      (p.thumb ? '<img data-pid="' + p.pid + '" alt="장면 ' + c.n + ' 사진" src="' + p.thumb.url + '">' : '<div class="noimg muted">미리보기 없음<br>' + esc(p.name) + '</div>') + '</div>').join('');
     return '<section class="chap"><div class="chead">' + (c.loc ? '<div class="cmap">' + miniSVG(track, chapters, c, pr, hasBg) + '</div>' : '') +
       '<div class="cinfo"><div class="ctitle"><span class="no">' + c.n + '</span><b>' + esc(when) + '</b></div>' + meta +
       uniq.map((w) => '<div class="warn">' + esc(w) + '</div>').join('') + '</div></div>' +
@@ -306,13 +306,13 @@
         track = C.parseGpxTrack(await gpxFile.text());
         if (track.length < 2) { track = null; err.textContent = 'GPX에 시간이 있는 기록 점이 없어서 지도·시간 맞춤은 건너뛰었어요. (사진 GPS는 그대로 써요)'; err.hidden = false; }
       }
-      const photos = [];
+      const photos = []; window.__photoFiles = {};
       for (let i = 0; i < files.length; i++) {
         prog.textContent = '사진 ' + (i + 1) + '/' + files.length + ' 읽는 중…';
         const f = files[i];
         const info = X.describe(await readExif(f), f.name, f.lastModified, tzMin);
         const ph = Object.assign({ name: f.name }, info);
-        ph.thumb = await thumb(f);
+        ph.thumb = await thumb(f); ph.pid = i; ph.file = f; window.__photoFiles[i] = f;
         photos.push(ph);
       }
       photos.forEach((p) => place(p, track, shiftSec));
@@ -381,7 +381,7 @@
     });
   }
 
-  const canvasJpg = (cv) => dataUrlBytes(cv.toDataURL('image/jpeg', 0.86));
+  const canvasJpg = (cv) => dataUrlBytes(cv.toDataURL('image/jpeg', 0.92));
   function wrapLines(g, text, maxW) { // 글자 단위로 줄바꿈(한글은 띄어쓰기가 적어서)
     const out = []; let cur = '';
     for (const ch of text) { if (g.measureText(cur + ch).width > maxW && cur) { out.push(cur); cur = ch; } else cur += ch; }
@@ -390,34 +390,34 @@
   // 장면 카드: 왼쪽 2/3 지도 + 오른쪽 1/3 시간·고도 내용(+메모) 을 한 장의 그림으로
   async function sceneCard(ch, n) {
     const mini = ch.querySelector('svg.mini'); if (!mini) return null;
-    const W = 1080, mw = Math.round(W * 0.66) - 8, pad = 14;
-    const m = await svgToCanvas(mini, 2.2); if (!m) return null;
+    const W = 1440, mw = Math.round(W * 0.66) - 8, pad = 18;
+    const m = await svgToCanvas(mini, 3); if (!m) return null;
     const mh = Math.round(m.height * mw / m.width), ix = mw + pad * 2, iw = W - ix - pad;
     const rows = []; // {t, size, bold, color}
     const tm = (ch.querySelector('.ctitle b') || {}).textContent || '';
     ch.querySelectorAll('.cinfo > span, .cinfo .warn').forEach((x) => {
       const cls = x.className || '';
-      rows.push({ t: x.textContent.replace(/\s+/g, ' ').trim(), size: 30, color: /stay/.test(cls) ? '#c2410c' : /warn/.test(cls) ? '#b45309' : '#334155' });
+      rows.push({ t: x.textContent.replace(/\s+/g, ' ').trim(), size: 40, color: /stay/.test(cls) ? '#c2410c' : /warn/.test(cls) ? '#b45309' : '#334155' });
     });
     const memoEl = ch.querySelector('.memo:not([hidden])'), memo = memoEl && memoEl.textContent.trim();
     const cv = document.createElement('canvas'); cv.width = W; const g0 = cv.getContext('2d');
     // 높이 계산
-    g0.font = 'bold 40px sans-serif'; const tl = wrapLines(g0, tm, iw - 70);
-    let y = pad + 8 + tl.length * 48 + 10; const laid = [];
-    rows.forEach((r) => { g0.font = r.size + 'px sans-serif'; const ls = wrapLines(g0, r.t, iw); laid.push({ r, ls, y }); y += ls.length * 40 + 8; });
-    g0.font = '32px sans-serif'; const ml = memo ? wrapLines(g0, memo, W - pad * 4) : [];
-    const top = Math.max(mh + pad * 2, y + pad), memoH = memo ? ml.length * 44 + 36 : 0;
+    g0.font = 'bold 54px sans-serif'; const tl = wrapLines(g0, tm, iw - 90);
+    let y = pad + 8 + tl.length * 64 + 12; const laid = [];
+    rows.forEach((r) => { g0.font = r.size + 'px sans-serif'; const ls = wrapLines(g0, r.t, iw); laid.push({ r, ls, y }); y += ls.length * 52 + 10; });
+    g0.font = '42px sans-serif'; const ml = memo ? wrapLines(g0, memo, W - pad * 4) : [];
+    const top = Math.max(mh + pad * 2, y + pad), memoH = memo ? ml.length * 58 + 44 : 0;
     cv.height = top + memoH; const g = cv.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, cv.height); g.textBaseline = 'top';
     g.drawImage(m, pad, pad, mw, mh);
     g.strokeStyle = '#e2e8f0'; g.lineWidth = 2; g.strokeRect(pad, pad, mw, mh);
-    g.fillStyle = '#ea580c'; g.beginPath(); g.arc(ix + 26, pad + 8 + 26, 26, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 30px sans-serif'; g.textAlign = 'center'; g.fillText(String(n), ix + 26, pad + 8 + 11); g.textAlign = 'left';
-    g.fillStyle = '#0f172a'; g.font = 'bold 40px sans-serif'; tl.forEach((l, i) => g.fillText(l, ix + 64, pad + 8 + i * 48 + 4));
-    laid.forEach((o) => { g.fillStyle = o.r.color; g.font = o.r.size + 'px sans-serif'; o.ls.forEach((l, i) => g.fillText(l, ix, o.y + i * 40)); });
+    g.fillStyle = '#ea580c'; g.beginPath(); g.arc(ix + 34, pad + 8 + 34, 34, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#fff'; g.font = 'bold 40px sans-serif'; g.textAlign = 'center'; g.fillText(String(n), ix + 34, pad + 8 + 15); g.textAlign = 'left';
+    g.fillStyle = '#0f172a'; g.font = 'bold 54px sans-serif'; tl.forEach((l, i) => g.fillText(l, ix + 84, pad + 8 + i * 64 + 4));
+    laid.forEach((o) => { g.fillStyle = o.r.color; g.font = o.r.size + 'px sans-serif'; o.ls.forEach((l, i) => g.fillText(l, ix, o.y + i * 52)); });
     if (memo) {
       g.fillStyle = '#fffbeb'; g.fillRect(pad, top, W - pad * 2, memoH - 8);
-      g.fillStyle = '#1e293b'; g.font = '32px sans-serif'; ml.forEach((l, i) => g.fillText(l, pad * 2, top + 18 + i * 44));
+      g.fillStyle = '#1e293b'; g.font = '42px sans-serif'; ml.forEach((l, i) => g.fillText(l, pad * 2, top + 22 + i * 58));
     }
     return cv;
   }
@@ -436,7 +436,7 @@
         prog.textContent = '장면 ' + (i + 1) + '/' + chaps.length + ' 준비 중…';
         const card = await sceneCard(ch, i + 1);
         if (card) add(n + '_장면.jpg', canvasJpg(card), 'image/jpeg');
-        ch.querySelectorAll('.shots img').forEach((im, k) => add(n + '_사진' + (k + 1) + '.jpg', dataUrlBytes(im.src), 'image/jpeg'));
+        ch.querySelectorAll('.shots img').forEach((im, k) => { const of = window.__photoFiles && window.__photoFiles[im.dataset.pid]; if (of) add(n + '_사진' + (k + 1) + '.jpg', of, of.type || 'image/jpeg'); else add(n + '_사진' + (k + 1) + '.jpg', dataUrlBytes(im.src), 'image/jpeg'); }); // 사진은 원본 파일 그대로
       }
     } catch (e) { prog.textContent = '준비 중 오류: ' + e.message; main.disabled = false; return; }
     const files = items.map((x) => new File([x.blob], x.name, { type: x.blob.type }));
@@ -450,11 +450,13 @@
     saveBtn.textContent = '📥 이미지 ' + files.length + '장 기기에 저장';
     saveBtn.onclick = async () => {
       saveBtn.disabled = true;
-      for (let i = 0; i < files.length; i++) {
+      // 갤러리는 '최신 저장'이 맨 위라서, 이야기 순서가 위에서부터 되도록 마지막 파일부터 저장한다
+      for (let k = 0; k < files.length; k++) {
+        const i = files.length - 1 - k;
         const a = document.createElement('a'); a.href = URL.createObjectURL(files[i]); a.download = slug + '_' + files[i].name;
         document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 20000);
-        prog.textContent = '저장 중… ' + (i + 1) + '/' + files.length;
-        await new Promise((r) => setTimeout(r, 450));
+        prog.textContent = '저장 중… ' + (k + 1) + '/' + files.length + ' (초 단위로 순서를 맞추느라 천천히 저장해요)';
+        await new Promise((r) => setTimeout(r, 1100));
       }
       prog.textContent = '저장 완료: ' + files.length + '장 (다운로드 폴더). 블로그 앱 사진 추가에서 갤러리의 "다운로드" 앨범을 열어 한꺼번에 고르세요.';
       saveBtn.disabled = false;
