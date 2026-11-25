@@ -48,7 +48,7 @@
     photo.loc = out;
   }
 
-  // ---- 장면(챕터) 묶기: 시간이 20분 넘게 벌어지거나 500m 넘게 떨어지면 새 장면 ----
+  // ---- 장면(챕터) 묶기: 시간이 5분 넘게 벌어지거나 100m 넘게 떨어지면 새 장면 ----
   function chaptersOf(photos, track, stays) {
     const list = [];
     let cur = null;
@@ -58,8 +58,8 @@
       const lastP = cur && cur.photos[cur.photos.length - 1];
       let split = !cur || !hasT || cur.noTime;
       if (!split && lastP) {
-        if (p.tAdj - lastP.tAdj > 20 * 60000) split = true;
-        else if (here && cur.loc && C.haversineKm([cur.loc.lat, cur.loc.lon], [here.lat, here.lon]) > 0.5) split = true;
+        if (p.tAdj - lastP.tAdj > 5 * 60000) split = true;
+        else if (here && cur.loc && C.haversineKm([cur.loc.lat, cur.loc.lon], [here.lat, here.lon]) > 0.1) split = true;
       }
       if (hasT && cur && cur.noTime) split = true;
       if (split) { cur = { photos: [], loc: null, noTime: !hasT }; list.push(cur); }
