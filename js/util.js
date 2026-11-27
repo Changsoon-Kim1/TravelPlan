@@ -8,7 +8,7 @@
   }
 
   const KIND = {
-    olle: { icon: '🥾', label: '올레 걷기', color: '#16a34a' },
+    olle: { icon: '🥾', label: '코스 걷기 (올레·한라산·오름)', color: '#16a34a' },
     flight: { icon: '✈️', label: '항공', color: '#2563eb' },
     stay: { icon: '🏨', label: '숙소', color: '#7c3aed' },
     meal: { icon: '🍽️', label: '식사', color: '#ea580c' },

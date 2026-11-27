@@ -1,6 +1,6 @@
 /* 앱 시작/화면 전환/상태 */
 window.S = {
-  trip: null, events: [], routes: {}, colors: {},
+  trip: null, events: [], routes: {}, extras: [], colors: {},
   view: 'map', selectedCourse: null,
   places: [], selectedDay: null, calMonth: '2027-04', calMode: 'grid', filter: 'all'
 };
@@ -22,6 +22,7 @@ window.App = (function () {
     { id: 'spring', label: '🌸 4월 유채·청보리', fn: (c) => window.OLLE_SPRING_IDS.includes(c.id) },
     { id: 'near', label: '🏨 중문·서귀포 (신라호텔 근처)', fn: (c) => c.region === '서귀포·중문' },
     { id: 'easy', label: '🐣 가벼운 코스', fn: (c) => c.difficulty === '하' },
+    { id: 'mount', label: '⛰ 한라산·오름', fn: (c) => !!c.extra },
     { id: 'sched', label: '✓ 내 일정', fn: (c) => scheduledSet().has(c.id) }
   ];
   const currentFilter = () => FILTERS.find((f) => f.id === S.filter) || FILTERS[0];
@@ -80,7 +81,8 @@ window.App = (function () {
   }
 
   function resetState() {
-    S.trip = null; S.events = []; S.routes = {}; S.places = [];
+    S.trip = null; S.events = []; S.routes = {}; S.places = []; S.extras = [];
+    TPCourses.setExtras([], {}); S.colors = C.assignColors(window.OLLE_COURSES); TPMap.setCourses();
     if (TPMap.ready()) { TPMap.setMode('olle'); TPMap.setRoutes({}); }
     TPPanel.close();
   }
@@ -202,7 +204,7 @@ window.App = (function () {
   function updateNotice() {
     const el = $('#mapNotice');
     if (!TPMap.ready() || !isOlle() || !S.trip) { el.hidden = true; return; }
-    const n = TPMap.exactCount(), total = window.OLLE_COURSES.length;
+    const base = TPCourses.base(), total = base.length, n = base.filter((c) => TPMap.isExact(c.id)).length;
     el.hidden = n >= total;
     el.innerHTML = '⚠ 점선은 <b>임시 대략 경로</b>예요 (공식 경로 ' + n + '/' + total + ')' +
       (TPData.isOwner() ? ' <button type="button" id="noticeGpx">GPX 올리기</button>' : '');
@@ -239,6 +241,8 @@ window.App = (function () {
   function applyData(data, keepUI) {
     if (!data.trip) { applyEmpty(); return; }
     S.trip = data.trip; S.events = data.events.slice().sort(C.compareEvents); S.routes = data.routes || {}; S.places = data.places || [];
+    S.extras = data.extras || [];
+    applyCourses();
     TPMap.setMode(S.trip.mode);
     TPPlaces.setRegion(S.trip);
     if (!keepUI) {
@@ -257,6 +261,24 @@ window.App = (function () {
     applyFilter();
     TPCalendar.render();
     if (keepUI) TPPanel.refreshSchedule();
+  }
+
+  // 올레 + 내가 추가한 코스(한라산·오름) 목록을 다시 만들고 색·지도를 맞춘다
+  function applyCourses() {
+    TPCourses.setExtras(S.trip && S.trip.mode !== 'general' ? S.extras : [], S.routes);
+    S.colors = C.assignColors(window.OLLE_COURSES);
+    TPMap.setCourses();
+  }
+
+  // GPX 올리기/삭제로 코스 목록이 바뀐 뒤 화면 전체를 맞춘다
+  function coursesChanged() {
+    applyCourses();
+    TPMap.setRoutes(S.routes);
+    TPMap.setScheduled(scheduledSet());
+    applyFilter();
+    TPPanel.rerender();
+    updateNotice();
+    TPCalendar.render();
   }
 
   // 여행이 하나도 없을 때의 빈 화면
@@ -297,9 +319,9 @@ window.App = (function () {
     try {
       const data = await TPData.loadAll();
       if (!data.trip || data.trip.id !== S.trip.id) { applyData(data, false); if (!data.trip) TPTrips.open({ create: true }); return; }
-      const before = JSON.stringify([S.events, S.places, Object.keys(S.routes).length, S.trip.share_enabled, S.trip.share_can_edit, S.trip.can_edit]);
+      const before = JSON.stringify([S.events, S.places, Object.keys(S.routes).length, S.extras, S.trip.share_enabled, S.trip.share_can_edit, S.trip.can_edit]);
       const sorted = data.events.slice().sort(C.compareEvents);
-      const after = JSON.stringify([sorted, data.places || [], Object.keys(data.routes || {}).length, data.trip.share_enabled, data.trip.share_can_edit, data.trip.can_edit]);
+      const after = JSON.stringify([sorted, data.places || [], Object.keys(data.routes || {}).length, data.extras || [], data.trip.share_enabled, data.trip.share_can_edit, data.trip.can_edit]);
       if (before !== after) { applyData(data, true); if (!silent) toast('최신 내용으로 갱신했어요'); }
       else if (!silent) toast('이미 최신이에요');
     } catch (err) {
@@ -334,5 +356,5 @@ window.App = (function () {
   }
 
   document.addEventListener('DOMContentLoaded', boot);
-  return { boot, switchTrip, showView, showCourse, showPin, findOnMap, markPlace, unmarkPlace, afterEventsChanged, updateNotice, refresh };
+  return { boot, switchTrip, showView, showCourse, showPin, findOnMap, markPlace, unmarkPlace, afterEventsChanged, updateNotice, refresh, coursesChanged };
 })();

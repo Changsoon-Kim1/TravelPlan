@@ -34,14 +34,13 @@
     const allDay = !d.start_time;
     const generalTrip = S.trip && S.trip.mode === 'general';
     const kindOpts = Object.keys(KIND).filter((k) => !(generalTrip && k === 'olle' && d.kind !== 'olle')).map((k) => '<option value="' + k + '"' + (k === d.kind ? ' selected' : '') + '>' + KIND[k].icon + ' ' + KIND[k].label + '</option>').join('');
-    const courseOpts = '<option value="">(선택 안 함)</option>' + window.OLLE_COURSES.map((c) =>
-      '<option value="' + c.id + '"' + (c.id === d.course_id ? ' selected' : '') + '>' + esc(c.code) + ' ' + esc(c.name) + ' · ' + c.distance.toFixed(1) + 'km</option>').join('');
+    const courseOpts = '<option value="">(선택 안 함)</option>' + TPCourses.optionsHTML(d.course_id, true);
 
     const m = openModal(
       '<h2>' + (editing ? '일정 수정' : '일정 추가') + '</h2>' +
       '<form id="evForm" novalidate>' +
       '<label>종류<select id="fKind">' + kindOpts + '</select></label>' +
-      '<label id="rowCourse" ' + (d.kind === 'olle' ? '' : 'hidden') + '>올레 코스<select id="fCourse">' + courseOpts + '</select></label>' +
+      '<label id="rowCourse" ' + (d.kind === 'olle' ? '' : 'hidden') + '>코스 <small class="muted">(올레·한라산·오름)</small><select id="fCourse">' + courseOpts + '</select></label>' +
       '<div id="rowPlace" ' + (d.kind === 'olle' ? 'hidden' : '') + '><div class="lbl">장소 <small class="muted">(지도에 핀·날짜로 표시)</small></div>' +
       '<div class="place-sel" id="pSel"></div>' +
       '<div class="copy-row"><input id="pQ" type="search" enterkeyhint="search" placeholder="장소 검색 (예: 호텔·식당 이름)"><button type="button" class="btn" id="pGo">검색</button></div>' +
@@ -101,7 +100,7 @@
       const c = byId(f('fCourse').value);
       if (!c) return;
       f('fKind').value = 'olle'; syncCourseRow();
-      if (!f('fTitle').value.trim() || f('fTitle').value === autoTitle) { autoTitle = c.code + ' ' + c.name; f('fTitle').value = autoTitle; }
+      if (!f('fTitle').value.trim() || f('fTitle').value === autoTitle) { autoTitle = TPCourses.titleOf(c); f('fTitle').value = autoTitle; }
       if (!f('fAllDay').checked && !f('fStart').value) { f('fStart').value = '10:00'; }
       autoEnd();
     });
@@ -155,7 +154,7 @@
   function openCourseEventModal(c) {
     openEventModal({
       defaults: {
-        kind: 'olle', course_id: c.id, title: c.code + ' ' + c.name,
+        kind: 'olle', course_id: c.id, title: TPCourses.titleOf(c),
         day: suggestedDay(), start_time: '10:00', end_time: C.defaultEnd('10:00', c.maxHours)
       }
     });
@@ -202,43 +201,63 @@
     });
   }
 
-  // ---------- 코스 GPX 올리기 ----------
+  // ---------- 코스 GPX 올리기 (올레 + 한라산·오름 등 새 코스) ----------
   function openGpxModal() {
+    const CATS = TPCourses.CATS;
     const m = openModal(
       '<h2>🗺 코스 GPX 올리기</h2>' +
-      '<p class="muted">제주올레 공식 홈페이지 등에서 받은 코스별 GPX 파일을 고르세요. 여러 개를 한 번에 선택할 수 있고, 파일 이름에 코스 번호(예: 10코스, 7-1)가 있으면 자동으로 맞춰요. 올린 경로는 지도에 실선으로 표시되고, 배우자도 같이 볼 수 있어요.</p>' +
+      '<p class="muted">코스별 GPX 파일을 고르세요(여러 개 가능). <b>올레</b>는 파일 이름에 코스 번호(예: 10코스, 7-1)가 있으면 자동으로 맞춰요. ' +
+      '<b>한라산 탐방로·오름</b>은 "새 한라산 코스 / 새 오름"을 고르고 이름을 적으면 새 코스로 추가돼요(파일 이름에 성판악·관음사·○○오름 등이 있으면 자동). 배우자도 같이 볼 수 있어요.</p>' +
       '<input type="file" id="gpxFiles" accept=".gpx,application/gpx+xml,text/xml,application/xml" multiple>' +
+      '<datalist id="hallaNames">' + TPCourses.HALLA_TRAILS.map((t) => '<option value="' + esc(t) + ' 탐방로">').join('') + '</datalist>' +
       '<div id="gpxRows" class="gpx-rows"></div>' +
       '<p class="form-err" id="gpxErr" role="alert" hidden></p>' +
       '<div class="modal-actions"><button class="btn" id="gpxClose">닫기</button><button class="btn primary" id="gpxSave" disabled>선택한 경로 저장</button></div>' +
       '<h3>등록된 경로 <small id="gpxCount"></small></h3><div id="gpxDone"></div>', { wide: true });
     const rowsEl = $('#gpxRows', m), saveBtn = $('#gpxSave', m);
-    let parsed = []; // { name, path, km }
-    const ids = window.OLLE_COURSES.map((c) => c.id);
+    let parsed = []; // { name, path, km, courseId, newCat, newName }
+    const baseIds = TPCourses.base().map((c) => c.id);
 
+    function doneRow(c) {
+      const id = c.id, label = c.extra ? c.icon + ' ' + c.name : c.code + ' ' + c.name;
+      return '<div class="gpx-done"><span><span class="dot" style="background:' + S.colors[id] + '"></span>' + esc(label) +
+        ' <small class="muted">' + S.routes[id].length + '점 · ' + C.pathLengthKm(S.routes[id]).toFixed(1) + 'km</small></span>' +
+        '<button class="icon-btn danger" data-rm="' + id + '" title="이 경로 삭제">🗑</button></div>';
+    }
     function renderDone() {
-      const have = ids.filter((id) => S.routes[id] && S.routes[id].length > 1);
-      $('#gpxCount', m).textContent = '(' + have.length + '/' + ids.length + ')';
-      $('#gpxDone', m).innerHTML = have.length ? have.map((id) => {
-        const c = byId(id);
-        return '<div class="gpx-done"><span><span class="dot" style="background:' + S.colors[id] + '"></span>' + esc(c.code) + ' ' + esc(c.name) +
-          ' <small class="muted">' + S.routes[id].length + '점 · ' + C.pathLengthKm(S.routes[id]).toFixed(1) + 'km</small></span>' +
-          '<button class="icon-btn danger" data-rm="' + id + '" title="이 경로 삭제">🗑</button></div>';
-      }).join('') : '<p class="muted sm">아직 올린 경로가 없어요. (지도에는 임시 대략 경로가 표시됩니다)</p>';
+      const olle = TPCourses.base().filter((c) => S.routes[c.id] && S.routes[c.id].length > 1);
+      const ex = TPCourses.extras();
+      $('#gpxCount', m).textContent = '(올레 ' + olle.length + '/' + baseIds.length + (ex.length ? ' · 한라산·오름 ' + ex.length : '') + ')';
+      $('#gpxDone', m).innerHTML = (ex.length ? '<div class="vis-t">⛰ 한라산 · 오름 · 기타</div>' + ex.map(doneRow).join('') : '') +
+        (olle.length ? '<div class="vis-t">🥾 제주올레</div>' + olle.map(doneRow).join('') : '') +
+        (!olle.length && !ex.length ? '<p class="muted sm">아직 올린 경로가 없어요. (올레는 지도에 임시 대략 경로가 표시됩니다)</p>' : '');
+    }
+    function rowSelect(p, i) {
+      const sel = p.newCat ? '__new_' + p.newCat : (p.courseId || '');
+      const news = Object.keys(CATS).map((k) => '<option value="__new_' + k + '"' + (sel === '__new_' + k ? ' selected' : '') + '>➕ 새 ' + CATS[k].label + ' 코스로 추가</option>').join('');
+      return '<select data-i="' + i + '"><option value="">(건너뜀)</option><optgroup label="새 코스">' + news + '</optgroup>' +
+        TPCourses.optionsHTML(sel, false) + '</select>';
     }
     function renderRows() {
       rowsEl.innerHTML = parsed.map((p, i) => {
-        const guess = p.courseId;
-        const c = guess && byId(guess);
-        const warn = c && Math.abs(p.km - c.distance) / c.distance > 0.3 ? '<div class="warn-text">⚠ 파일 길이 ' + p.km.toFixed(1) + 'km, 코스 ' + c.distance.toFixed(1) + 'km — 맞는 코스인지 확인하세요</div>' : '';
+        const c = p.courseId && byId(p.courseId);
+        const warn = c && !c.extra && Math.abs(p.km - c.distance) / c.distance > 0.3 ? '<div class="warn-text">⚠ 파일 길이 ' + p.km.toFixed(1) + 'km, 코스 ' + c.distance.toFixed(1) + 'km — 맞는 코스인지 확인하세요</div>' : '';
+        const nameIn = p.newCat ? '<input type="text" class="gpx-newname" data-n="' + i + '" maxlength="60" placeholder="코스 이름 (예: ' + (p.newCat === 'halla' ? '성판악 탐방로' : p.newCat === 'oreum' ? '새별오름' : '사려니숲길') + ')"' +
+          (p.newCat === 'halla' ? ' list="hallaNames"' : '') + ' value="' + esc(p.newName || '') + '">' : '';
         return '<div class="gpx-row"><div class="gpx-name">' + esc(p.name) + ' <small class="muted">' + p.path.length + '점 · ' + p.km.toFixed(1) + 'km</small>' + warn + '</div>' +
-          '<select data-i="' + i + '"><option value="">(건너뜀)</option>' + window.OLLE_COURSES.map((x) =>
-            '<option value="' + x.id + '"' + (x.id === guess ? ' selected' : '') + '>' + esc(x.code) + ' ' + esc(x.name) + '</option>').join('') + '</select></div>';
+          rowSelect(p, i) + nameIn + '</div>';
       }).join('');
-      $$('select', rowsEl).forEach((s) => s.addEventListener('change', () => { parsed[Number(s.dataset.i)].courseId = s.value || null; updateSave(); }));
+      $$('select', rowsEl).forEach((s) => s.addEventListener('change', () => {
+        const p = parsed[Number(s.dataset.i)], v = s.value;
+        if (v.indexOf('__new_') === 0) { p.newCat = v.slice(6); p.courseId = null; if (!p.newName) p.newName = (TPCourses.guess(p.name) || {}).name || ''; }
+        else { p.newCat = null; p.courseId = v || null; }
+        renderRows();
+      }));
+      $$('.gpx-newname', rowsEl).forEach((inp) => inp.addEventListener('input', () => { parsed[Number(inp.dataset.n)].newName = inp.value; updateSave(); }));
       updateSave();
     }
-    function updateSave() { saveBtn.disabled = !parsed.some((p) => p.courseId); }
+    const ready = (p) => p.courseId || (p.newCat && (p.newName || '').trim());
+    function updateSave() { saveBtn.disabled = !parsed.some(ready); }
 
     $('#gpxFiles', m).addEventListener('change', async (e) => {
       const err = $('#gpxErr', m); err.hidden = true;
@@ -247,22 +266,37 @@
         try {
           const path = C.parseGpx(await file.text());
           if (path.length < 2) { err.textContent = file.name + ': 경로 점(trkpt)을 찾지 못해 건너뛰었어요.'; err.hidden = false; continue; }
-          parsed.push({ name: file.name, path, km: C.pathLengthKm(path), courseId: C.guessCourseId(file.name, ids) });
+          const p = { name: file.name, path, km: C.pathLengthKm(path), courseId: C.guessCourseId(file.name, baseIds), newCat: null, newName: '' };
+          if (!p.courseId) {
+            const g = TPCourses.guess(file.name);
+            if (g) {
+              const same = TPCourses.extras().find((c) => c.category === g.category && c.name === g.name);
+              if (same) p.courseId = same.id; else { p.newCat = g.category; p.newName = g.name; }
+            }
+          }
+          parsed.push(p);
         } catch (x) { err.textContent = file.name + ': 파일을 읽지 못했어요.'; err.hidden = false; }
       }
       renderRows();
     });
     saveBtn.addEventListener('click', async () => {
-      const map = {}, dup = [];
-      parsed.forEach((p) => { if (p.courseId) { if (map[p.courseId]) dup.push(p.courseId); map[p.courseId] = C.compactPath(p.path, 1500); } });
-      if (dup.length && !confirm('같은 코스(' + dup.join(', ') + ')에 파일이 여러 개 선택됐어요. 마지막 파일만 저장할까요?')) return;
+      const map = {}, meta = {}, dup = [];
+      parsed.filter(ready).forEach((p) => {
+        let id = p.courseId;
+        if (p.newCat) { id = TPCourses.newId(p.newCat); meta[id] = { name: p.newName.trim().slice(0, 60), category: p.newCat }; }
+        else { const c = byId(id); if (c && c.extra) meta[id] = { name: c.name, category: c.category }; }
+        if (map[id]) dup.push(id);
+        map[id] = C.compactPath(p.path, 1500);
+      });
+      if (dup.length && !confirm('같은 코스(' + dup.map((id) => TPCourses.titleOf(byId(id))).join(', ') + ')에 파일이 여러 개 선택됐어요. 마지막 파일만 저장할까요?')) return;
       saveBtn.disabled = true; saveBtn.textContent = '저장 중…';
       try {
-        await TPData.saveRoutes(map);
+        await TPData.saveRoutes(map, meta);
         Object.assign(S.routes, map);
-        TPMap.setRoutes(S.routes);
-        TPPanel.rerender();
-        App.updateNotice();
+        Object.keys(meta).forEach((id) => {
+          S.extras = S.extras.filter((x) => x.id !== id).concat([{ id, name: meta[id].name, category: meta[id].category }]);
+        });
+        App.coursesChanged();
         parsed = []; rowsEl.innerHTML = ''; $('#gpxFiles', m).value = '';
         renderDone();
         toast(Object.keys(map).length + '개 코스 경로를 저장했어요');
@@ -271,11 +305,20 @@
     });
     $('#gpxDone', m).addEventListener('click', async (e) => {
       const b = e.target.closest('[data-rm]');
-      if (!b || !confirm(byId(b.dataset.rm).code + ' 경로를 삭제할까요? (임시 대략 경로로 돌아가요)')) return;
+      if (!b) return;
+      const c = byId(b.dataset.rm);
+      const used = S.events.filter((x) => x.course_id === c.id).length;
+      const msg = c.extra
+        ? TPCourses.titleOf(c) + ' 코스를 삭제할까요? 코스 목록과 지도에서 사라져요.' + (used ? ' (이 코스로 잡은 일정 ' + used + '개는 코스 연결 없이 남아요)' : '')
+        : c.code + ' 경로를 삭제할까요? (임시 대략 경로로 돌아가요)';
+      if (!confirm(msg)) return;
       try {
-        await TPData.deleteRoute(b.dataset.rm);
-        delete S.routes[b.dataset.rm];
-        TPMap.setRoutes(S.routes); TPPanel.rerender(); App.updateNotice(); renderDone();
+        await TPData.deleteRoute(c.id);
+        delete S.routes[c.id];
+        S.extras = S.extras.filter((x) => x.id !== c.id);
+        if (TPPanel.current() === c.id && c.extra) TPPanel.close();
+        App.coursesChanged();
+        renderDone();
       } catch (err) { toast(err.message, 'err'); }
     });
     $('#gpxClose', m).addEventListener('click', closeModal);

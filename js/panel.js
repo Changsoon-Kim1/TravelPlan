@@ -103,7 +103,42 @@
     return h + '</section>';
   }
 
+  // 내가 GPX로 추가한 코스(한라산 탐방로·오름 등): 올린 경로로 만든 정보만 보여 준다
+  function renderExtra(c) {
+    const color = S.colors[c.id] || '#0f766e';
+    const path = S.routes[c.id] || [];
+    const prof = path.length > 1 ? TPCore.elevationProfile(path) : null;
+    const q = c.category === 'halla' && !/한라산/.test(c.name) ? '한라산 ' + c.name : (/제주/.test(c.name) ? c.name : '제주 ' + c.name);
+    let h = '<div class="panel-head" style="border-top-color:' + color + '">' +
+      '<button class="close" id="panelClose" aria-label="닫기">✕</button>' +
+      '<div class="code"><span class="dot" style="background:' + color + '"></span>' + esc(c.icon + ' ' + c.code) + ' · 내가 올린 GPX</div>' +
+      '<h2>' + esc(c.name) + '</h2></div>';
+    h += '<div class="panel-body">';
+    h += '<div class="stats"><div><small>거리</small><b>' + c.distance.toFixed(1) + 'km</b></div>' +
+      '<div><small>예상 시간</small><b>약 ' + c.maxHours + '시간</b></div>' +
+      '<div><small>최고 고도</small><b>' + (prof ? Math.round(prof.max) + 'm' : '-') + '</b></div></div>';
+    h += '<section class="overview"><h3>📖 경로</h3>';
+    if (path.length > 1) h += '<div class="vis"><div class="vis-t">경로 모양 <small>(북쪽이 위 · 초록 시점 → 빨강 종점)</small></div>' + shapeSVG(path, color) + '</div>';
+    if (prof) {
+      h += '<div class="vis"><div class="vis-t">고도 프로필</div>' + elevSVG(prof, color) +
+        '<div class="elev-stats"><span>↑ 누적 오르막 <b>' + Math.round(prof.up) + 'm</b></span><span>↓ 내리막 <b>' + Math.round(prof.down) + 'm</b></span>' +
+        '<span>최고 <b>' + Math.round(prof.max) + 'm</b></span><span>최저 <b>' + Math.round(prof.min) + 'm</b></span></div></div>';
+    } else h += '<p class="muted sm">⛰ 고도 그래프는 고도(ele)가 들어 있는 GPX를 올리면 나타나요.</p>';
+    h += '<p class="muted sm">거리·고도는 올린 GPX 기준이고, 예상 시간은 평지 시속 3km + 오르막 500m당 1시간으로 어림한 값이에요.</p></section>';
+    h += scheduleHTML(c);
+    h += '<section><h3>🔗 찾아보기</h3><div class="link-grid">' +
+      ext(links.naverMap(q), '네이버 지도에서 보기') +
+      ext(links.kakaoMap(q), '카카오맵에서 보기') +
+      ext(links.naverBlog(q + ' 후기'), '다녀온 후기 (블로그)') +
+      ext(links.naverImage(q), '📷 사진 (네이버)') +
+      (c.category === 'halla' ? ext(links.naverBlog('한라산 탐방예약 ' + c.name), '⛰ 탐방 예약·입산 통제 안내 찾기') : '') +
+      ext(links.jejuBus, '제주 버스 정보') +
+      '</div>' + (c.category === 'halla' ? '<p class="muted sm">한라산은 탐방로에 따라 사전 예약과 입산 통제 시간이 있어요. 출발 전에 공식 안내를 꼭 확인하세요.</p>' : '') + '</section>';
+    return h + '</div>';
+  }
+
   function render(c) {
+    if (c.extra) return renderExtra(c);
     const color = S.colors[c.id] || '#0f766e';
     const exact = TPMap.isExact(c.id);
     const q = courseQuery(c);

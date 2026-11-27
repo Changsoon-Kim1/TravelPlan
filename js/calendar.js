@@ -35,10 +35,12 @@
       const days = new Set(S.events.map((e) => e.day)).size;
       return '<div class="cal-summary">📌 일정 <b>' + S.events.length + '개</b> · 일정 있는 날 <b>' + days + '일</b></div>';
     }
-    const olle = S.events.filter((e) => e.course_id && byId(e.course_id));
-    const km = olle.reduce((s, e) => s + byId(e.course_id).distance, 0);
-    const days = new Set(olle.map((e) => e.day)).size;
-    return '<div class="cal-summary">🥾 올레 걷기 <b>' + olle.length + '개</b> 일정 · <b>' + days + '일</b> · 합계 <b>' + km.toFixed(1) + 'km</b></div>';
+    const walks = S.events.filter((e) => e.course_id && byId(e.course_id));
+    const olle = walks.filter((e) => !byId(e.course_id).extra), mt = walks.filter((e) => byId(e.course_id).extra);
+    const km = (l) => l.reduce((s, e) => s + byId(e.course_id).distance, 0);
+    const days = new Set(walks.map((e) => e.day)).size;
+    return '<div class="cal-summary">🥾 올레 <b>' + olle.length + '개</b> · ' + km(olle).toFixed(1) + 'km' +
+      (mt.length ? ' · ⛰ 산·오름 <b>' + mt.length + '개</b> · ' + km(mt).toFixed(1) + 'km' : '') + ' · 걷는 날 <b>' + days + '일</b></div>';
   }
 
   function gridHTML() {
@@ -77,7 +79,7 @@
     let h = '<li class="ev" style="border-left-color:' + eventColor(ev) + '">' +
       '<div class="ev-time">' + esc(multi ? fmtDay(ev.day) + '~' + fmtDay(ev.end_day) : fmtTimeRange(ev)) + '</div>' +
       '<div class="ev-main"><b>' + k.icon + ' ' + esc(ev.title) + '</b>';
-    if (course) h += '<div class="muted sm">' + course.distance.toFixed(1) + 'km · ' + esc(course.timeText) + ' · 난이도 ' + esc(course.difficulty) + '</div>';
+    if (course) h += '<div class="muted sm">' + course.distance.toFixed(1) + 'km · ' + esc(course.timeText) + (course.difficulty ? ' · 난이도 ' + esc(course.difficulty) : '') + '</div>';
     if (ev.place) h += '<div class="muted sm">📍 ' + esc(ev.place) + '</div>';
     if (ev.note) h += '<div class="muted sm">' + esc(ev.note) + '</div>';
     h += '</div><div class="row-actions">';

@@ -292,3 +292,24 @@ create policy "owner all" on public.course_routes for all to authenticated
   using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
 -- shared_bundle: trip 에 mode, map_lat, map_lng, map_zoom 포함 / shared_routes: 올레 여행이면 소유자의 모든 경로 반환
 -- (현재 배포된 함수 정의는 Supabase 프로젝트의 migration 'multi_trip' 참고)
+
+-- ============================================================
+-- 추가 마이그레이션 custom_courses: 한라산 탐방로·오름 등 내가 GPX로 추가하는 코스
+-- category 가 있는 행 = 추가 코스(이름 포함), 없는 행 = 올레 코스 경로
+-- ============================================================
+alter table public.course_routes
+  add column if not exists name text check (name is null or char_length(name) <= 60),
+  add column if not exists category text check (category is null or category in ('halla','oreum','etc'));
+
+create or replace function public.shared_course_meta(p_token text) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare t public.trips;
+begin
+  select * into t from private.trip_for_token(p_token);
+  if t.id is null then return null; end if;
+  if t.mode <> 'olle' then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('id', r.course_id, 'name', r.name, 'category', r.category))
+                   from public.course_routes r where r.owner_id = t.owner_id and r.category is not null), '[]'::jsonb);
+end $$;
+revoke all on function public.shared_course_meta(text) from public;
+grant execute on function public.shared_course_meta(text) to anon, authenticated;

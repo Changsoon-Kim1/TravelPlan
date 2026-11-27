@@ -47,9 +47,9 @@
       '<div><small>일정</small><b>' + evs.length + '개</b></div>' +
       '<div><small>일정 있는 날</small><b>' + new Set(evs.map((e) => e.day)).size + '일</b></div>' +
       '<div><small>⭐ 관심 장소</small><b>' + S.places.length + '곳</b></div>' :
-      '<div><small>올레 코스</small><b>' + olle.length + '개</b></div>' +
+      '<div><small>걷는 코스</small><b>' + olle.length + '개</b></div>' +
       '<div><small>걷는 날</small><b>' + walkDays + '일</b></div>' +
-      '<div><small>올레 거리(공식)</small><b>' + km.toFixed(1) + 'km</b></div>') +
+      '<div><small>걷는 거리</small><b>' + km.toFixed(1) + 'km</b></div>') +
       '<div><small>숙박 계획</small><b>' + nights.length + '/' + (days.length - 1) + '박</b></div></div></section>';
 
     // 날짜별
@@ -85,9 +85,10 @@
       h += '<section class="rp-sec"><h2>걷는 코스</h2>';
       olle.forEach((e) => {
         const c = byId(e.course_id), x = (window.OLLE_EXTRA || {})[c.id];
-        h += '<div class="rp-course"><div><b>' + esc(c.code) + ' ' + esc(c.name) + '</b> <small>' + esc(fmtTag(e)) + '</small>' +
+        h += '<div class="rp-course"><div><b>' + esc(TPCourses.titleOf(c)) + '</b> <small>' + esc(fmtTag(e)) + '</small>' +
           (window.OLLE_SPRING_IDS.includes(c.id) ? ' 🌸' : '') + '</div>' +
-          '<div class="rp-n">' + esc(c.start) + ' → ' + esc(c.end) + ' · ' + c.distance.toFixed(1) + 'km · ' + esc(c.timeText) + ' · 난이도 ' + esc(c.difficulty) + '</div>' +
+          (c.extra ? '<div class="rp-n">' + c.icon + ' ' + esc(c.code) + ' · ' + c.distance.toFixed(1) + 'km · ' + esc(c.timeText) + '</div>'
+            : '<div class="rp-n">' + esc(c.start) + ' → ' + esc(c.end) + ' · ' + c.distance.toFixed(1) + 'km · ' + esc(c.timeText) + ' · 난이도 ' + esc(c.difficulty) + '</div>') +
           (x && x.story ? '<div class="rp-n">' + esc(x.story) + '</div>' : '') + '</div>';
       });
       h += '</section>';
@@ -105,7 +106,7 @@
     days.slice(0, -1).forEach((iso) => { if (!stays.some((e) => (e.end_day && e.end_day > e.day ? iso >= e.day && iso < e.end_day : e.day === iso))) warns.push(md(iso) + ' 숙박 미정'); });
     h += '<section class="rp-sec"><h2>점검할 점</h2>' + (warns.length ? '<ul class="rp-ul">' + warns.map((w) => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '<p>특별히 걸리는 점이 없어요.</p>') + '</section>';
 
-    h += '<footer class="rp-foot">만든 날 ' + esc(TPUtil.todayISO()) + ' ' + (general ? '' : '· 코스 거리·시간은 제주올레 공식 안내 기준') + '</footer></article>';
+    h += '<footer class="rp-foot">만든 날 ' + esc(TPUtil.todayISO()) + ' ' + (general ? '' : '· 올레 거리·시간은 제주올레 공식 안내, 한라산·오름은 올린 GPX 기준') + '</footer></article>';
     return h;
   }
 

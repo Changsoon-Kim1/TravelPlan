@@ -159,23 +159,26 @@
         if (!bundle) { throw new ApiError('invalid_token', 400); }
         trip = normTrip(bundle.trip);
         const routes = trip.mode === 'olle' ? ((await rpc('shared_routes', { p_token: shareToken })) || {}) : {};
-        return { trip, events: (bundle.events || []).map(normEvent), routes, places: (bundle.places || []).map(normPlace) };
+        let extras = [];
+        if (trip.mode === 'olle') { try { extras = (await rpc('shared_course_meta', { p_token: shareToken })) || []; } catch (e) { extras = []; } }
+        return { trip, events: (bundle.events || []).map(normEvent), routes, extras, places: (bundle.places || []).map(normPlace) };
       }
       if (mode !== 'owner') throw new ApiError('로그인이 필요합니다.', 401);
       const list = (await rest('trips?select=*&order=start_date.asc&limit=200')).map(normTrip);
       trips = list;
-      if (!list.length) { trip = null; return { trip: null, trips: list, events: [], routes: {}, places: [] }; }
+      if (!list.length) { trip = null; return { trip: null, trips: list, events: [], routes: {}, extras: [], places: [] }; }
       const want = lsGet(LS_TRIP);
       trip = Object.assign({}, list.find((t) => t.id === want) || list[0], { can_edit: true });
       lsSet(LS_TRIP, trip.id);
       const [evs, rts, pls] = await Promise.all([
         rest('trip_events?trip_id=eq.' + trip.id + '&select=*&order=day.asc&limit=1000'),
-        trip.mode === 'olle' ? rest('course_routes?select=course_id,path') : Promise.resolve([]),
+        trip.mode === 'olle' ? rest('course_routes?select=course_id,path,name,category') : Promise.resolve([]),
         rest('trip_places?trip_id=eq.' + trip.id + '&select=*&order=created_at.asc&limit=500')
       ]);
       const routes = {};
-      rts.forEach((r) => { routes[r.course_id] = r.path; });
-      return { trip, trips: list, events: evs.map(normEvent), routes, places: pls.map(normPlace) };
+      const extras = [];
+      rts.forEach((r) => { routes[r.course_id] = r.path; if (r.category) extras.push({ id: r.course_id, name: r.name, category: r.category }); });
+      return { trip, trips: list, events: evs.map(normEvent), routes, extras, places: pls.map(normPlace) };
     },
 
     // ---- 여행 목록 (소유자) ----
@@ -230,8 +233,11 @@
     },
 
     // ---- 소유자 전용 ----
-    async saveRoutes(map) {
-      const body = Object.keys(map).map((cid) => ({ course_id: cid, path: map[cid], point_count: map[cid].length }));
+    // meta: { courseId: { name, category } } — 한라산·오름 등 내가 추가하는 코스만
+    async saveRoutes(map, meta) {
+      meta = meta || {};
+      const body = Object.keys(map).map((cid) => ({ course_id: cid, path: map[cid], point_count: map[cid].length,
+        name: meta[cid] ? meta[cid].name : null, category: meta[cid] ? meta[cid].category : null }));
       if (!body.length) return;
       await rest('course_routes?on_conflict=owner_id,course_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body });
     },

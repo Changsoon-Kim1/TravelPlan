@@ -21,9 +21,11 @@
 
   function pathFor(c) {
     if (routes[c.id] && routes[c.id].length > 1) return { path: routes[c.id], exact: true };
+    if (c.extra || !window.APPROX_COURSES[c.id]) return null; // 내가 추가한 코스는 GPX가 있어야 그린다
     return { path: TPCore.approxPath(window.APPROX_COURSES[c.id], window.APPROX_ANCHORS), exact: false };
   }
   function labelText(c) {
+    if (c.extra) return c.icon + ' ' + (c.name.length > 6 ? c.name.slice(0, 6) + '…' : c.name);
     return c.id.replace(/^0/, '') + (window.OLLE_SPRING_IDS.includes(c.id) ? '🌸' : '');
   }
   // 내 일정에 든 코스는 굵고 진하게, 아닌 코스는 가늘고 연하게 (선택하면 둘 다 잠시 강조)
@@ -62,7 +64,9 @@
   function drawCourse(c) {
     if (groups[c.id]) { groups[c.id].group.remove(); delete groups[c.id]; }
     if (!olleOn) return;
-    const { path, exact } = pathFor(c);
+    const pf = pathFor(c);
+    if (!pf) return;
+    const { path, exact } = pf;
     const pick = () => onSelect(c.id);
     const hit = L.polyline(path, { color: '#000', weight: 22, opacity: 0, bubblingMouseEvents: false }).on('click', pick);
     const casing = L.polyline(path, casingStyle(c)).on('click', pick);
@@ -183,6 +187,15 @@
       return true;
     },
     ready: () => ready,
+    // 코스 목록(올레 + 추가 코스)이 바뀌었을 때: 색·목록을 다시 맞추고, 없어진 코스는 지운다
+    setCourses() {
+      Object.keys(courseById).forEach((k) => delete courseById[k]);
+      window.OLLE_COURSES.forEach((c) => { courseById[c.id] = c; });
+      colors = TPCore.assignColors(window.OLLE_COURSES);
+      if (!ready) return;
+      Object.keys(groups).forEach((id) => { if (!courseById[id]) { groups[id].group.remove(); delete groups[id]; } });
+      if (selectedId && !courseById[selectedId]) selectedId = null;
+    },
     // 여행 종류에 맞게: 올레 여행이면 코스를 그리고, 일반 여행이면 숨긴다
     setMode(mode) {
       const on = mode !== 'general';

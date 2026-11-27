@@ -167,6 +167,7 @@ input[type=checkbox] { width: 18px; height: 18px; }
 .gpx-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .gpx-row select { margin-top: 0; font-size: 14px; }
 .gpx-name { font-size: 13.5px; word-break: break-all; }
+.gpx-newname { grid-column: 1 / -1; margin-top: 0; }
 .gpx-done { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
 @media (max-width: 520px) { .gpx-row { grid-template-columns: 1fr; } }
 
