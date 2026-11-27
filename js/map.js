@@ -31,15 +31,15 @@
   // 내 일정에 든 코스는 굵고 진하게, 아닌 코스는 가늘고 연하게 (선택하면 둘 다 잠시 강조)
   function lineStyle(c, exact) {
     const sel = selectedId === c.id, sch = scheduled.has(c.id);
-    const weight = sch ? (sel ? 7 : 5) : (sel ? 5 : 3);
-    const opacity = (sch || sel) ? 1 : 0.3;
+    const weight = sch ? (sel ? 7 : 5) : (sel ? 5 : 4);
+    const opacity = (sch || sel) ? 1 : 0.62;
     return { color: colors[c.id], weight, opacity, dashArray: exact ? null : (sch ? '12 8' : '8 8'), lineCap: 'round', lineJoin: 'round' };
   }
   // 선 아래에 깔리는 흰 테두리: 일정 코스는 두껍게, 나머지는 얇고 연하게
   function casingStyle(c) {
     const sel = selectedId === c.id, sch = scheduled.has(c.id);
-    const weight = sch ? (sel ? 10 : 8) : (sel ? 8 : 5);
-    return { color: '#fff', weight, opacity: (sch || sel) ? 0.95 : 0.25, lineCap: 'round', lineJoin: 'round', interactive: false };
+    const weight = sch ? (sel ? 10 : 8) : (sel ? 8 : 6.5);
+    return { color: '#fff', weight, opacity: (sch || sel) ? 0.95 : 0.55, lineCap: 'round', lineJoin: 'round', interactive: false };
   }
   // 일정 코스 꼬리표: "4/12(월) 10:00~15:00" (같은 코스를 여러 번 잡았으면 가장 이른 일정 + 건수)
   function scheduleTag(c) {
