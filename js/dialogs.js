@@ -217,6 +217,15 @@
     const rowsEl = $('#gpxRows', m), saveBtn = $('#gpxSave', m);
     let parsed = []; // { name, path, km, courseId, newCat, newName }
     const baseIds = TPCourses.base().map((c) => c.id);
+    // 올레 코스를 고를 때 파일 위치가 그 코스(올린 경로 또는 임시 대략 경로)와 4km 넘게 떨어져 있으면 다른 코스 파일일 가능성이 큼
+    function offsetKm(id, path) {
+      const c = byId(id); if (!c || c.extra) return 0;
+      let ref = S.routes[id] && S.routes[id].length > 1 ? S.routes[id] : null;
+      if (!ref && window.APPROX_COURSES && window.APPROX_COURSES[id]) { try { ref = C.approxPath(window.APPROX_COURSES[id], window.APPROX_ANCHORS); } catch (e) { ref = null; } }
+      if (!ref || ref.length < 2) return 0;
+      const f = [path[0], path[path.length - 1]], e = [ref[0], ref[ref.length - 1]];
+      return Math.min.apply(null, [[0, 0], [0, 1], [1, 0], [1, 1]].map((k) => C.haversineKm(f[k[0]], e[k[1]])));
+    }
 
     function doneRow(c) {
       const id = c.id, label = c.extra ? c.icon + ' ' + c.name : c.code + ' ' + c.name;
@@ -241,7 +250,9 @@
     function renderRows() {
       rowsEl.innerHTML = parsed.map((p, i) => {
         const c = p.courseId && byId(p.courseId);
-        const warn = c && !c.extra && Math.abs(p.km - c.distance) / c.distance > 0.3 ? '<div class="warn-text">⚠ 파일 길이 ' + p.km.toFixed(1) + 'km, 코스 ' + c.distance.toFixed(1) + 'km — 맞는 코스인지 확인하세요</div>' : '';
+        const off = c ? offsetKm(c.id, p.path) : 0;
+        const warn = (c && !c.extra && Math.abs(p.km - c.distance) / c.distance > 0.3 ? '<div class="warn-text">⚠ 파일 길이 ' + p.km.toFixed(1) + 'km, 코스 ' + c.distance.toFixed(1) + 'km — 맞는 코스인지 확인하세요</div>' : '') +
+          (off > 4 ? '<div class="warn-text">⚠ 이 파일은 ' + esc(c.code) + ' 위치에서 약 ' + Math.round(off) + 'km 떨어져 있어요 — 한라산·오름 파일이면 "새 코스로 추가"를 고르세요</div>' : '');
         const nameIn = p.newCat ? '<input type="text" class="gpx-newname" data-n="' + i + '" maxlength="60" placeholder="코스 이름 (예: ' + (p.newCat === 'halla' ? '성판악 탐방로' : p.newCat === 'oreum' ? '새별오름' : '사려니숲길') + ')"' +
           (p.newCat === 'halla' ? ' list="hallaNames"' : '') + ' value="' + esc(p.newName || '') + '">' : '';
         return '<div class="gpx-row"><div class="gpx-name">' + esc(p.name) + ' <small class="muted">' + p.path.length + '점 · ' + p.km.toFixed(1) + 'km</small>' + warn + '</div>' +
@@ -266,7 +277,11 @@
         try {
           const path = C.parseGpx(await file.text());
           if (path.length < 2) { err.textContent = file.name + ': 경로 점(trkpt)을 찾지 못해 건너뛰었어요.'; err.hidden = false; continue; }
-          const p = { name: file.name, path, km: C.pathLengthKm(path), courseId: C.guessCourseId(file.name, baseIds), newCat: null, newName: '' };
+          const p = { name: file.name, path, km: C.pathLengthKm(path), courseId: null, newCat: null, newName: '' };
+          // 파일 이름에 올레/코스가 없고 한라산·오름 이름이 있으면 번호(날짜 등)보다 그 이름을 먼저 본다
+          const olleWord = /올레|olle|코스/i.test(file.name), g0 = TPCourses.guess(file.name);
+          if (!(g0 && !olleWord)) p.courseId = C.guessCourseId(file.name, baseIds);
+          if (p.courseId && offsetKm(p.courseId, path) > 4) p.courseId = null; // 위치가 맞지 않으면 자동 선택하지 않음
           if (!p.courseId) {
             const g = TPCourses.guess(file.name);
             if (g) {
@@ -288,6 +303,8 @@
         if (map[id]) dup.push(id);
         map[id] = C.compactPath(p.path, 1500);
       });
+      const far = parsed.filter((p) => p.courseId && offsetKm(p.courseId, p.path) > 4);
+      if (far.length && !confirm('위치가 맞지 않는 올레 코스에 저장하려는 파일이 있어요:\n' + far.map((p) => p.name + ' → ' + TPCourses.titleOf(byId(p.courseId))).join('\n') + '\n그래도 저장할까요? (그 코스의 기존 경로가 덮어써져요)')) return;
       if (dup.length && !confirm('같은 코스(' + dup.map((id) => TPCourses.titleOf(byId(id))).join(', ') + ')에 파일이 여러 개 선택됐어요. 마지막 파일만 저장할까요?')) return;
       saveBtn.disabled = true; saveBtn.textContent = '저장 중…';
       try {
