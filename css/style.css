@@ -56,6 +56,7 @@ main { flex: 1; position: relative; min-height: 0; }
 .view { position: absolute; inset: 0; display: none; }
 .view.on { display: block; }
 #map { position: absolute; inset: 0; background: #dbeafe; }
+#appVer { position: absolute; left: 6px; bottom: 4px; z-index: 800; font-size: 10px; color: #475569; background: rgba(255,255,255,.7); padding: 0 4px; border-radius: 3px; pointer-events: none; }
 .map-fail { padding: 40px 20px; text-align: center; color: var(--muted); }
 
 #mapOverlay { position: absolute; left: 8px; right: 56px; top: 8px; z-index: 900; pointer-events: none; display: flex; flex-direction: column; gap: 6px; }
